@@ -156,6 +156,7 @@ actor=object:copy({
   initialize=function(self,pos,args)
     self.pos=pos
     if (args) merge(self, args)
+    self:setroom()
   end,
   delete=function(self)
     del(actors, self)
@@ -187,7 +188,7 @@ actor=object:copy({
   walkable=function(self,pos)
     if (self.player and devmode) return true
     -- assumes actor of size 1 for now
-    return world:walkable(pos+v{-3,2}) and world:walkable(pos+v{2,-3}) and world:walkable(pos-3) and world:walkable(pos+2)
+    return world:walkable(self, pos+v{-3,2}) and world:walkable(self, pos+v{2,-3}) and world:walkable(self, pos-3) and world:walkable(self, pos+2)
   end,
   setroom=function(self)
     self.room=self.pos:world_to_room()
@@ -202,9 +203,9 @@ end
 
 function draw_actors()
   for l=1,layer.max do
-    foreach(actors, function(a)
-      if (a.layer == l and (not a.room or (a.room.x == room.x and a.room.y == room.y))) a:draw()
-    end)
+    for a in all(actors) do
+      if (a.layer == l and (a.room.x == room.x and a.room.y == room.y)) a:draw()
+    end
   end
 end
 
@@ -437,12 +438,7 @@ door=component:copy({
   walltile=64,
   transition_tile=65,
   current=0,
-  facing=south,
-  initialize=function(self,...)
-    component.initialize(self,...)
-    self.c.facing=self.facing
-    self.powered=nil
-  end,
+  powered=nil,
   tick=function(self)
     local prev=self.open
     self.powered=self.c.powered
@@ -618,38 +614,6 @@ button=component:copy({
     self.spr=self.pressed==0 and 58 or 59
   end,
 })
-barrier=component:copy({
-  dir=west,
-  size=16,
-  connections={i(7,3,{facing=east})},
-  update=function(self)
-    self.on=self.powered
-    if (self.invert) self.on=not self.on
-    if (devmode or not self.on or self.room != room) return
-    local pos=self.pos
-    if (self.dir==south or self.dir==east) pos+=8
-    if self.dir==west and player.pos.x >= pos.x then
-      player:move(v{max(-5,pos.x-player.pos.x),0})
-    elseif self.dir==south and player.pos.y <= pos.y then
-      player:move(v{0,min(5,pos.y-player.pos.y)})
-    elseif self.dir==north and player.pos.y >= pos.y then
-      player:move(v{0,max(-5,pos.y-player.pos.y)})
-    end
-  end,
-  tick=function(self)
-    self.powered=self.c.powered
-  end,
-  draw=function(self)
-    component.draw(self)
-    if (not self.on) return
-    local dir=self.dir:turn_left()
-    local sspr=dir.id%2==1 and 80 or 97
-    for i=1,self.size do
-      local pos=self.pos+dir*((i-1)*8)
-      spr(sspr,pos.x,pos.y)
-    end
-  end,
-})
 robot_spawner=component:copy({
   connections={i(-8,0)},
   robot_name='main',
@@ -676,6 +640,7 @@ robotclass=component:copy({
   spr=10,
   wallcolor=6,
   action2=function(self)
+    self.player_pos=player.pos
     player:teleport(self.room_coords+v{26,108})
     player.in_robot=self
   end,
@@ -685,6 +650,7 @@ robotclass=component:copy({
   spawned=function(self,pos)
     self.pos=pos
     self.switch.powered=false
+    self:setroom()
   end,
   initialize=function(self,...)
     component.initialize(self,...)
@@ -742,13 +708,13 @@ robotclass=component:copy({
     component.delete(self)
   end,
   update=function(self)
-    if (player.pos:overlap(self.room_coords+v{16,108},self.room_coords+v{20,112})) player:teleport(self.pos) player.in_robot=nil
+    if (player.pos:overlap(self.room_coords+v{16,108},self.room_coords+v{20,112})) player:teleport(self.player_pos) player.in_robot=nil
     if (player.holding == self) self.switch.powered=false
     local b=self.bumpers
-    b[1].powered=not world:walkable(self.pos+v{0,-5})
-    b[2].powered=not world:walkable(self.pos+v{-5,0})
-    b[3].powered=not world:walkable(self.pos+v{0,4})
-    b[4].powered=not world:walkable(self.pos+v{4,0})
+    b[1].powered=not world:walkable(self, self.pos+v{0,-5})
+    b[2].powered=not world:walkable(self, self.pos+v{-5,0})
+    b[3].powered=not world:walkable(self, self.pos+v{0,4})
+    b[4].powered=not world:walkable(self, self.pos+v{4,0})
     if self:active() then
       local t=self.thrusters
       if (t[1].powered) self:move(south*.5)
@@ -811,6 +777,7 @@ simulation={
 }
 
 flag_walk=0
+flag_robot_walk=7
 robot_room=v{0,0}
 world={
   rooms={
@@ -897,7 +864,7 @@ world={
       [2]={
         actors={
           robotclass:new(v{90,60},{tutorial=true}),
-          barrier:new(v{120,80},{cfacing=south,coffs=v{-2,2},size=8,dir=north}),
+          door:new(v{120,92},{cfacing=west,doorway={-6,-1,-1,-1},walltile=97,invert=true}),
           button:new(v{117,114},{invert=true}),
           button:new(v{11,114},{flipx=true}),
           door:new(v{14,123},{facing=west,doorway={1,0,2,1}}),
@@ -914,7 +881,7 @@ world={
           actor_sensor:new(v{112,28},{coffs=v{0,2},cfacing=south}),
           toggle:new(v{102,72}),
           track_replacer:new(v{10,7},{coffs=v{3,2},tile=38}),
-          barrier:new(v{56,0}),
+          door:new(v{66,6},{doorway={-1,1,-1,14},walltile=80,invert=true}),
           button:new(v{117,14},{invert=true}),
           button:new(v{27,116},{flipx=true,reset=2}),
           robot_spawner:new(v{22,100},{cfacing=west}),
@@ -931,7 +898,7 @@ world={
           train_spawn:new(v{6,6}),
           train_spawn:new(v{4,5},{interval=0,flipy=true}),
           train_spawn:new(v{4,9},{interval=0}),
-          barrier:new(v{56,88},{size=4,dir=south,coffs=v{-2,-4},cfacing=north}),
+          door:new(v{82,81},{doorway={-2,0,-1,0},walltile=97,invert=true,cfacing=north}),
           button:new(v{117,12},{invert=true}),
         },
         wires={{5,1,4,1}},
@@ -951,13 +918,14 @@ world={
   tile_set=function(self, pos, tile)
     mset(pos.x/8, pos.y/8, tile)
   end,
-  walkable=function(self, pos)
+  walkable=function(self, actor, pos)
     -- hacky robot room handling
     if pos.y >= 1280 then
       pos.x = pos.x % 128
       pos.y = pos.y % 128
     end
     local tile=self:tile_at(pos)
+    if (actor.robot and fget(tile, flag_robot_walk)) return true
     return not fget(tile, flag_walk)
   end,
   switch_rooms=function(self, newroom)
@@ -1433,7 +1401,7 @@ ccccccccccccccccccccccccccccccccccccccccccccccccccccccccc8c8cc8ccccccccccccccccc
 ccccccccccccccccccccccccccccccccccccccccccccccccccccccccc8c8cc8ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 
 __gff__
-00000000000019150d090000000000000000000000000b000000000000000000000000000000130007000000000000000000000000000000000000000000000001010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000019150d090000000000000000000000000b000000000000000000000000000000130007000000000000000000000000000000000000000000000001010000000000000000000000000000810000000000000000000000000000008181000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 0000000000000044400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000404000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
