@@ -91,6 +91,12 @@ end
 function vector:about_face()
   return id_to_dir[(self.id+1)%4+1]
 end
+function vector:dset(idx)
+  dset(idx,self.x) dset(idx+1,self.y)
+end
+function vector.dget(idx)
+  return v{dget(idx),dget(idx+1)}
+end
 
 function sample(arr)
   return arr[flr(rnd(#arr))+1]
@@ -991,16 +997,18 @@ world={
 }
 
 solder_distance=4
+devmode_playerpos=62
 playerclass=actor:copy({
   player=true,
   layer=layer.player,
   holding=nil,
   wire_type=1,
-  initialize=function(self,pos)
-    self.pos=pos
-  end,
   btn4=0,
   btn5=0,
+  initialize=function(self,...)
+    actor.initialize(self,...)
+    if (devmode) self.pos=vector.dget(devmode_playerpos) self:setroom()
+  end,
   update=function(self)
     if (btn(0)) self:move(west)
     if (btn(1)) self:move(east)
@@ -1019,6 +1027,7 @@ playerclass=actor:copy({
       self.holding:move(self.pos-oldpos)
       if (not self:touching(self.holding)) self.holding=nil
     end
+    self.pos:dset(devmode_playerpos)
   end,
   teleport=function(self,pos)
     self.holding=nil
@@ -1121,7 +1130,6 @@ function _init()
   set_devmode()
   world:init()
   local start_pos=v{150,498}
-  -- start_pos=v{261,328}
   player=playerclass:new(start_pos)
 end
 
