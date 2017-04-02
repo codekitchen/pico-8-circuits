@@ -582,7 +582,6 @@ robotclass=component:copy({
   action2=function(self)
     self.player_pos=player.pos
     player:teleport(self.room_coords+v{26,108})
-    player.in_robot=self
   end,
   spawned=function(self,pos)
     self.pos=pos
@@ -621,6 +620,7 @@ robotclass=component:copy({
         {or_,102,44},
       },
     })
+    self.robot_room.robot=self
     for i=1,4 do
       self.bumpers[i]=self.robot_room.actors[i]
       self.thrusters[i]=self.robot_room.actors[i+4]
@@ -645,7 +645,7 @@ robotclass=component:copy({
     notimplemented()
   end,
   update=function(self)
-    if (player.pos:overlap(self.room_coords+v{16,108},self.room_coords+v{20,112})) player:teleport(self.player_pos) player.in_robot=nil
+    if (player.pos:overlap(self.room_coords+v{16,108},self.room_coords+v{20,112})) player:teleport(self.player_pos)
     if (player.holding == self) self.switch.powered=false
     local b=self.bumpers
     b[1].powered=not world:walkable(self, self.pos+v{0,-5})
@@ -665,7 +665,7 @@ robotclass=component:copy({
     end
   end,
   active=function(self)
-    return not player.in_robot and self.switch.powered 
+    return not player.room.robot and self.switch.powered 
   end,
   interact_with=function(self,other)
     other:interact(self)
@@ -746,10 +746,10 @@ room=object:copy({
   end,
 })
 getroom=function(v)
-  local r=roomsidx[v.y][v.x]
+  local r=(roomsidx[v.y] or {})[v.x]
   if (r) return r
   -- probably only useful in dev mode?
-  -- return room:new(v.x, v.y, {})
+  return room:new(v.x, v.y, {})
 end
 function init_world()
 room:new(0,2,{
@@ -895,8 +895,8 @@ world={
     if (connflash > 0) connflash-=1
   end,
   draw_room=function(self)
-    local roomdata=player.in_robot or current_room
-    local mapcoords=player.in_robot and vector.zero or current_room.coord*16
+    local roomdata=current_room
+    local mapcoords=current_room.robot and vector.zero or current_room.coord*16
     if (roomdata.wallcolor) pal(12, roomdata.wallcolor)
     map(mapcoords.x, mapcoords.y, roomcoords.x, roomcoords.y, 16, 16)
     pal()
