@@ -14,6 +14,27 @@ layer = {
 
 s1=[[ strings! ]]
 
+function merge(dest, src)
+  for k, v in pairs(src) do
+    dest[k] = copy(v)
+  end
+end
+
+function copy(o, t)
+  local c
+  if type(o) == 'table' then
+    if (type(o.clone) == 'function') return o:clone()
+    c={}
+    merge(c, o)
+    if type(t) == 'table' then
+      merge(c, t)
+    end
+  else
+    c = o
+  end
+  return c
+end
+
 vector = {}
 vector.__index = vector
 function vector.new(o)
@@ -104,27 +125,6 @@ function contains(arr, v)
   return false
 end
 
-function merge(dest, src)
-  for k, v in pairs(src) do
-    dest[k] = copy(v)
-  end
-end
-
-function copy(o, t)
-  local c
-  if type(o) == 'table' then
-    if (type(o.clone) == 'function') return o:clone()
-    c={}
-    merge(c, o)
-    if type(t) == 'table' then
-      merge(c, t)
-    end
-  else
-    c = o
-  end
-  return c
-end
-
 object={
   copy=copy,
   new=function(class, ...)
@@ -135,20 +135,14 @@ object={
   initialize=function(self) end,
 }
 
-actors={}
 actor=object:copy({
-  new=function(class, ...)
-    local o=object.new(class, ...)
-    add(actors, o)
-    return o
-  end,
   initialize=function(self,pos,args)
     self.pos=pos
     if (args) merge(self, args)
     self:setroom()
   end,
   delete=function(self)
-    del(actors, self)
+    if (self.room) del(self.room.actors, self)
   end,
   pos=vector.zero,
   spr=1,
@@ -180,20 +174,30 @@ actor=object:copy({
     return world:walkable(self, pos+v{-3,2}) and world:walkable(self, pos+v{2,-3}) and world:walkable(self, pos-3) and world:walkable(self, pos+2)
   end,
   setroom=function(self)
-    self.room=self.pos:world_to_room()
+    local r=getroom(self.pos:world_to_room())
+    if (r == self.room) return
+    if (self.room) del(self.room.actors, self)
+    self.room=r
+    add(self.room.actors, self)
+    self:room_switched()
+  end,
+  room_switched=function(self)
   end,
 })
 
 function update_actors()
-  for a in all(actors) do
-    a:update()
+  -- update in all rooms, not just current
+  for i,room in pairs(rooms) do
+    for a in all(room.actors) do
+      a:update()
+    end
   end
 end
 
 function draw_actors()
   for l=1,layer.max do
-    for a in all(actors) do
-      if (a.layer == l and (a.room.x == room.x and a.room.y == room.y)) a:draw()
+    for a in all(current_room.actors) do
+      if (a.layer == l) a:draw()
     end
   end
 end
@@ -206,7 +210,6 @@ text_color=6
 connflash_color=8
 connflash=0
 connflash_time=20
-connections={}
 connection=object:copy({
   cposs={v{0, -3}, v{-3, 0}, v{0, 3}, v{3, 0}},
   initialize=function(self,x,y,args)
@@ -215,10 +218,6 @@ connection=object:copy({
   end,
   add=function(self, owner)
     self.owner=owner
-    add(connections, self)
-  end,
-  delete=function(self)
-    del(connections, self)
   end,
   connpos=function(self)
     return self._pos + self.owner.pos + self.cposs[self.facing.id]
@@ -303,11 +302,6 @@ component=actor:copy({
     self.c=self.connections[1]
     if (self.coffs) self.c._pos+=self.coffs
     if (self.cfacing) self.c.facing=self.cfacing
-    self:setroom()
-  end,
-  delete=function(self)
-    foreach(self.connections, function(c) c:delete(self) end)
-    actor.delete(self)
   end,
   draw=function(self)
     foreach(self.connections, function(c) c:draw() end)
@@ -316,6 +310,9 @@ component=actor:copy({
     pal()
   end,
   tick=function(self)
+  end,
+  room_switched=function(self)
+    for c in all(self.connections) do simulation:disconnect(c) end
   end,
 })
 and_=component:copy({
@@ -450,11 +447,9 @@ train=actor:copy({
   ticks=0,
   initialize=function(self,...)
     actor.initialize(self,...)
-    self.tpos=self.pos
-    self.pos=self.tpos*8+4
+    self.tpos=(self.pos-4)*0.125
   end,
   update=function(self)
-    self.room=self.pos:world_to_room()
     if self.ticks == 0 then
       local facing=self.facing
       local pos=self.tpos
@@ -471,6 +466,7 @@ train=actor:copy({
     end
     self.ticks-=1
     self.pos=self.tpos*8+4
+    self:setroom()
   end,
   can_move=function(pos,facing)
     local target=pos+facing
@@ -488,14 +484,10 @@ train_spawn=component:copy({
   interval=10,
   ticks=0,
   facing=south,
-  initialize=function(self,...)
-    component.initialize(self,...)
-    self.tpos=self.pos
-  end,
   tick=function(self)
     if (self.interval==0) return
     if self.ticks==0 then
-      train:new(self.tpos, {facing=self.facing})
+      train:new(self.pos, {facing=self.facing})
       self.ticks=self.interval
     end
     self.ticks-=1
@@ -506,12 +498,9 @@ actor_sensor=component:copy({
   connections={o(0,0)},
   sq={1,0},
   dtype='train',
-  initialize=function(self,...)
-    component.initialize(self,...)
-  end,
   tick=function(self)
     self.c.powered=false
-    for a in all(actors) do
+    for a in all(self.room.actors) do
       if (a.type == self.dtype and a:touching(self)) self.c.powered=true
     end
   end,
@@ -524,15 +513,10 @@ track_replacer=component:copy({
   layer=layer.bg,
   connections={i(0,0)},
   tile=0,
-  initialize=function(self,...)
-    component.initialize(self,...)
-    self.tpos=self.pos
-  end,
   tick=function(self)
-    self.pos=self.tpos*8+4
     if (not self.orig) self.orig=world:tile_at(self.pos)
     local tile=self.pos:world_to_tile()
-    for a in all(actors) do if a != self and a.tpos == tile then return end end
+    for a in all(self.room.actors) do if a != self and a.tpos == tile then return end end
     self.curtile=self.c.powered and self.tile or self.orig
     world:tile_set(self.pos, self.curtile)
   end,
@@ -577,8 +561,8 @@ robot_spawner=component:copy({
   end,
   spawn=function(self)
     local robot
-    for a in all(actors) do
-      if (a.robot and a.name == self.robot_name) robot=a
+    for a in all(robots) do
+      if (a.name == self.robot_name) robot=a
     end
     robot=robot or robotclass:new(self.pos,{name=self.robot_name})
     robot:spawned(self.pos)
@@ -587,18 +571,18 @@ robot_spawner=component:copy({
 
 bumper_color=7
 robot_room_coords=v{0,1280}
+robots={}
 robotclass=component:copy({
   movable=true,
   robot=true,
   spr=10,
   wallcolor=6,
+  bumpers={},
+  thrusters={},
   action2=function(self)
     self.player_pos=player.pos
     player:teleport(self.room_coords+v{26,108})
     player.in_robot=self
-  end,
-  add=function(self,cls,x,y,args)
-    return cls:new(self.room_coords+v{x,y},args)
   end,
   spawned=function(self,pos)
     self.pos=pos
@@ -607,6 +591,7 @@ robotclass=component:copy({
   end,
   initialize=function(self,...)
     component.initialize(self,...)
+    add(robots,self)
     self.room_coords=robot_room_coords
     -- this is a lot of rooms, roughly 60k,
     -- but that's still exhaustible. should
@@ -615,37 +600,39 @@ robotclass=component:copy({
     -- new ones.
     robot_room_coords=robot_room_coords+v{128,0}
     if (robot_room_coords.x>30000) robot_room_coords=v{0,robot_room_coords.y+128}
-    self.bumpers={
-      self:add(empty_output,60,8,{cfacing=south}),
-      self:add(empty_output,8,67,{cfacing=east}),
-      self:add(empty_output,67,119,{cfacing=north}),
-      self:add(empty_output,119,60,{cfacing=west}),
-    }
-    self.thrusters={
-      self:add(empty_input,76,16,{cfacing=south}),
-      self:add(empty_input,16,51,{cfacing=east}),
-      self:add(empty_input,51,111,{cfacing=north}),
-      self:add(empty_input,111,76,{cfacing=west}),
-    }
-    self.components={
-      self:add(toggle,100,84),
-      self:add(toggle,100,100),
-      self:add(switch,19,95),
-      self:add(or_,89,27),
-      self:add(and_,97,27),
-      self:add(and_,105,27),
-      self:add(not_,86,44),
-      self:add(not_,94,44),
-      self:add(or_,102,44),
-    }
-    self.switch=self.components[3]
+    self.robot_room=room:new(self.room_coords.x/128,self.room_coords.y/128,{
+      actors={
+        {empty_output,60,8,{cfacing=south}},
+        {empty_output,8,67,{cfacing=east}},
+        {empty_output,67,119,{cfacing=north}},
+        {empty_output,119,60,{cfacing=west}},
+        {empty_input,76,16,{cfacing=south}},
+        {empty_input,16,51,{cfacing=east}},
+        {empty_input,51,111,{cfacing=north}},
+        {empty_input,111,76,{cfacing=west}},
+        {toggle,100,84},
+        {toggle,100,100},
+        {switch,19,95},
+        {or_,89,27},
+        {and_,97,27},
+        {and_,105,27},
+        {not_,86,44},
+        {not_,94,44},
+        {or_,102,44},
+      },
+    })
+    for i=1,4 do
+      self.bumpers[i]=self.robot_room.actors[i]
+      self.thrusters[i]=self.robot_room.actors[i+4]
+    end
+    self.switch=self.robot_room.actors[11]
     self.switch.c.spr=0
     if self.tutorial then
       self.switch.powered=true
-      simulation:connect(self.bumpers[1].connections[1],self.components[1].connections[2])
-      simulation:connect(self.bumpers[3].connections[1],self.components[1].connections[1])
-      simulation:connect(self.thrusters[1].connections[1],self.components[1].connections[4])
-      simulation:connect(self.thrusters[3].connections[1],self.components[1].connections[3])
+      simulation:connect(self.bumpers[1].connections[1],self.robot_room.actors[9].connections[2])
+      simulation:connect(self.bumpers[3].connections[1],self.robot_room.actors[9].connections[1])
+      simulation:connect(self.thrusters[1].connections[1],self.robot_room.actors[9].connections[4])
+      simulation:connect(self.thrusters[3].connections[1],self.robot_room.actors[9].connections[3])
       self.text={
         {23,92,"\x8bpower"},
         {25,106,"\x8bexit"},
@@ -655,10 +642,7 @@ robotclass=component:copy({
     end
   end,
   delete=function(self)
-    for c in all(self.bumpers) do c:delete() end
-    for c in all(self.thrusters) do c:delete() end
-    for c in all(self.components) do c:delete() end
-    component.delete(self)
+    notimplemented()
   end,
   update=function(self)
     if (player.pos:overlap(self.room_coords+v{16,108},self.room_coords+v{20,112})) player:teleport(self.player_pos) player.in_robot=nil
@@ -675,7 +659,7 @@ robotclass=component:copy({
       if (t[3].powered) self:move(north*.5)
       if (t[4].powered) self:move(west*.5)
 
-      for a in all(actors) do
+      for a in all(self.room.actors) do
         if (self:touching(a) and a.interact) self:interact_with(a)
       end
     end
@@ -685,7 +669,6 @@ robotclass=component:copy({
   end,
   interact_with=function(self,other)
     other:interact(self)
-    if (self.tutorial) self:delete()
   end,
   tick=function(self)
   end,
@@ -706,14 +689,20 @@ robotclass=component:copy({
 
 simulation={
   tick=function(self)
-    for a in all(actors) do
-      if(a.tick) a:tick()
+    for i,room in pairs(rooms) do
+      for a in all(room.actors) do
+        if(a.tick) a:tick()
+      end
     end
-    for c in all(connections) do
-      if (c.input and not c.conn) c.powered=false
-      if c.output then
-        if (c.wire) c.wire.powered=c.powered
-        if (c.conn) c.conn.powered=c.powered
+    for i,room in pairs(rooms) do
+      for a in all(room.actors) do
+        for c in all(a.connections or {}) do
+          if (c.input and not c.conn) c.powered=false
+          if c.output then
+            if (c.wire) c.wire.powered=c.powered
+            if (c.conn) c.conn.powered=c.powered
+          end
+        end
       end
     end
   end,
@@ -725,146 +714,163 @@ simulation={
     local b=a.conn
     if (a.wire) a.wire:delete()
     a.conn=nil
-    b.conn=nil
+    if (b) b.conn=nil
   end,
 }
 
 flag_walk=0
 flag_robot_walk=7
-robot_room=v{0,0}
-world={
-  rooms={
-    [0]={
-      [0]={
-        -- inside the robot
-      },
-      [2]={
-        text={
-          {10,10,"combine logic gates"},
-          {10,17,"to build mechanisms"},
-          {40,98,"use the or gate"},
-          {40,105,"to open this door"},
-          {12,35,"and gate"},
-          {60,35,"not gate"},
-          {117,62,"\x91"},
-        },
-        actors={
-          timed:new(v{18, 120}),
-          timed:new(v{29, 120}, {powered=true}),
-          door:new(v{24,87}, {doorway={1,0,2,0}}),
-          and_:new(v{23,56}),
-          switch:new(v{18, 76}),
-          switch:new(v{28, 76}),
-          door:new(v{48, 45}, {doorway={0,1,0,2},facing=west}),
-          switch:new(v{60, 76}, {powered=true}),
-          not_:new(v{68,56}),
-          door:new(v{96, 45}, {doorway={0,1,0,2},facing=west}),
-          train_spawn:new(v{12, 0}),
-        },
-        wires={{4,3,7,1}, {8,1,9,1}, {9,2,10,1}},
-      },
-      [3]={
-        text={
-          {20,112,"\x8btoggle switch with z"},
-          {12,64,"solder wires with x"},
-          {12,71,"add/remove wires at"},
-          {12,78,"inputs and outputs"},
-          {60,20,"or gate->"},
-          {60,31,"carry with z"},
-          {60,38,"into next room"},
-          {100,5,"\x94"},
-        },
-        actors={
-          switch:new(v{12,116}),
-          door:new(v{29,94}, {doorway={1,0,2,0}}),
-          switch:new(v{12,44}),
-          door:new(v{49,20}, {doorway={0,1,0,2}, facing=west}),
-          or_:new(v{112,20}),
-        },
-        wires={{1,1,2,1}},
-      }
-    },
-    [1]={
-      [2]={
-        actors={
-          toggle:new(v{30, 70}),
-          actor_sensor:new(v{20,28}, {coffs=v{0,2},cfacing=south}),
-          actor_sensor:new(v{60,44}, {coffs=v{0,2},cfacing=south}),
-          track_replacer:new(v{5,3},{coffs=v{-2,4},cfacing=west,tile=7}),
-          actor_sensor:new(v{108,20}, {coffs=v{2,0},cfacing=east,sq={0,1}}),
-          toggle:new(v{104,60}),
-          door:new(v{78,50}, {doorway={0,1,0,4},facing=east}),
-          and_:new(v{107,76}),
-          actor_sensor:new(v{92,8},{coffs=v{-2,0},cfacing=west,sq={0,1}}),
-          train_spawn:new(v{13,0},{interval=0}),
-        },
-        text={
-          {12,102,"toggles retain"},
-          {12,109,"their last value"},
-          {117,70,"\x91"},
-        },
-        wires={{2,1,1,1},{3,1,1,2},{4,1,1,4},{5,1,8,2},{8,3,6,2},{6,4,7,1},{9,1,8,1}},
-      },
-      [3]={
-        text={
-          {5,102,"\x8btutorial"},
-          {100,25,"game\x91"},
-          {28,54,"     circuits!\n(err: logo missing)"},
-        },
-      },
-    },
-    [2]={
-      [2]={
-        actors={
-          robotclass:new(v{90,60},{tutorial=true}),
-          door:new(v{120,92},{cfacing=west,doorway={-6,-1,-1,-1},walltile=97,invert=true}),
-          button:new(v{117,114},{invert=true}),
-          button:new(v{11,114},{flipx=true}),
-          door:new(v{14,123},{facing=west,doorway={1,0,2,1}}),
-        },
-        wires={{2,1,3,1},{4,1,5,1}},
-        text={
-          {14,12,"this is a robot\x91\nhi robot!\nits bumpers sense walls\nthrusters move it around\n\nyou can carry it around\nand press x to climb in\nand rewire its insides!"},
-          {14,92,"move the robot over\nto press this button\x91\nyou'll need to switch it\nback on after moving"},
-        },
-      },
-      [3]={
-        actors={
-          actor_sensor:new(v{104,92},{coffs=v{0,-2},cfacing=north}),
-          actor_sensor:new(v{112,28},{coffs=v{0,2},cfacing=south}),
-          toggle:new(v{102,72}),
-          track_replacer:new(v{10,7},{coffs=v{3,2},tile=38}),
-          door:new(v{66,6},{doorway={-1,1,-1,14},walltile=80,invert=true}),
-          button:new(v{117,14},{invert=true}),
-          button:new(v{27,116},{flipx=true,reset=2}),
-          robot_spawner:new(v{22,100},{cfacing=west}),
-        },
-        wires={{1,1,3,2},{2,1,3,1},{3,4,4,1},{6,1,5,1},{8,1,7,1}},
-        text={
-          {10,121,"robots"},
-        },
-      },
-    },
-    [3]={
-      [3]={
-        actors={
-          train_spawn:new(v{6,6}),
-          train_spawn:new(v{4,5},{interval=0,flipy=true}),
-          train_spawn:new(v{4,9},{interval=0}),
-          door:new(v{82,81},{doorway={-2,0,-1,0},walltile=97,invert=true,cfacing=north}),
-          button:new(v{117,12},{invert=true}),
-        },
-        wires={{5,1,4,1}},
-      }
-    },
-    [4]={
-      [3]={
-        text={
-          {20,40,"nothing here yet! \x82"},
-        },
-      }
-    },
+roomsidx={{},{},{},{},{},{}}
+rooms={}
+room=object:copy({
+  actors={},
+  initialize=function(self,x,y,args)
+    self.coord=v{x,y}
+    merge(self, args)
+    add(rooms,self)
+    roomsidx[y]=roomsidx[y] or {}
+    roomsidx[y][x]=self
+    self:create_actors()
+  end,
+  create_actors=function(self)
+    local roomcoords=self.coord*128
+    local actors=self.actors
+    self.actors={}
+    for x in all(actors) do
+      local a=x[1]:new(v{x[2]+roomcoords.x,x[3]+roomcoords.y},x[4])
+      -- actor will add itself
+    end
+    for w in all(self.wires) do
+      simulation:connect(self.actors[w[1]].connections[w[2]], self.actors[w[3]].connections[w[4]])
+    end
+  end,
+})
+getroom=function(v)
+  local r=roomsidx[v.y][v.x]
+  if (r) return r
+  -- probably only useful in dev mode?
+  -- return room:new(v.x, v.y, {})
+end
+function init_world()
+room:new(0,2,{
+  text={
+    {10,10,"combine logic gates"},
+    {10,17,"to build mechanisms"},
+    {40,98,"use the or gate"},
+    {40,105,"to open this door"},
+    {12,35,"and gate"},
+    {60,35,"not gate"},
+    {117,62,"\x91"},
   },
+  actors={
+    {timed,18,120},
+    {timed,29, 120, {powered=true}},
+    {door,24,87, {doorway={1,0,2,0}}},
+    {and_,23,56},
+    {switch,18, 76},
+    {switch,28, 76},
+    {door,48, 45, {doorway={0,1,0,2},cfacing=west}},
+    {switch,60, 76, {powered=true}},
+    {not_,68,56},
+    {door,96, 45, {doorway={0,1,0,2},cfacing=west}},
+    {train_spawn,100,4},
+  },
+  wires={{4,3,7,1}, {8,1,9,1}, {9,2,10,1}},
+})
+room:new(0,3,{
+  text={
+    {20,112,"\x8btoggle switch with z"},
+    {12,64,"solder wires with x"},
+    {12,71,"add/remove wires at"},
+    {12,78,"inputs and outputs"},
+    {60,20,"or gate->"},
+    {60,31,"carry with z"},
+    {60,38,"into next room"},
+    {100,5,"\x94"},
+  },
+  actors={
+    {switch,12,116},
+    {door,29,94, {doorway={1,0,2,0}}},
+    {switch,12,44},
+    {door,49,20, {doorway={0,1,0,2}, cfacing=west}},
+    {or_,112,20},
+  },
+  wires={{1,1,2,1}},
+})
+room:new(1,2,{
+  actors={
+    {toggle,30, 70},
+    {actor_sensor,20,28, {coffs=v{0,2},cfacing=south}},
+    {actor_sensor,60,44, {coffs=v{0,2},cfacing=south}},
+    {track_replacer,44,28,{coffs=v{-2,4},cfacing=west,tile=7}},
+    {actor_sensor,108,20, {coffs=v{2,0},cfacing=east,sq={0,1}}},
+    {toggle,104,60},
+    {door,78,50, {doorway={0,1,0,4},cfacing=east}},
+    {and_,107,76},
+    {actor_sensor,92,8,{coffs=v{-2,0},cfacing=west,sq={0,1}}},
+    {train_spawn,104,0,{interval=0}},
+  },
+  text={
+    {12,102,"toggles retain"},
+    {12,109,"their last value"},
+    {117,70,"\x91"},
+  },
+  wires={{2,1,1,1},{3,1,1,2},{4,1,1,4},{5,1,8,2},{8,3,6,2},{6,4,7,1},{9,1,8,1}},
+})
+room:new(1,3,{
+  text={
+    {5,102,"\x8btutorial"},
+    {100,25,"game\x91"},
+    {28,54,"     circuits!\n(err: logo missing)"},
+  },
+})
+room:new(2,2,{
+  actors={
+    {robotclass,90,60,{tutorial=true}},
+    {door,120,92,{cfacing=west,doorway={-6,-1,-1,-1},walltile=97,invert=true}},
+    {button,117,114,{invert=true}},
+    {button,11,114,{flipx=true}},
+    {door,14,123,{facing=west,doorway={1,0,2,1}}},
+  },
+  wires={{2,1,3,1},{4,1,5,1}},
+  text={
+    {14,12,"this is a robot\x91\nhi robot!\nits bumpers sense walls\nthrusters move it around\n\nyou can carry it around\nand press x to climb in\nand rewire its insides!"},
+    {14,92,"move the robot over\nto press this button\x91\nyou'll need to switch it\nback on after moving"},
+  },
+})
+room:new(2,3,{
+  actors={
+    {actor_sensor,104,92,{coffs=v{0,-2},cfacing=north}},
+    {actor_sensor,112,28,{coffs=v{0,2},cfacing=south}},
+    {toggle,102,72},
+    {track_replacer,84,60,{coffs=v{3,2},tile=38}},
+    {door,66,6,{doorway={-1,1,-1,14},walltile=80,invert=true}},
+    {button,117,14,{invert=true}},
+    {button,27,116,{flipx=true,reset=2}},
+    {robot_spawner,22,100,{cfacing=west}},
+  },
+  wires={{1,1,3,2},{2,1,3,1},{3,4,4,1},{6,1,5,1},{8,1,7,1}},
+  text={
+    {10,121,"robots"},
+  },
+})
+room:new(3,3,{
+  actors={
+    {train_spawn,52,52},
+    {train_spawn,36,44,{interval=0,flipy=true}},
+    {train_spawn,36,76,{interval=0}},
+    {door,82,81,{doorway={-2,0,-1,0},walltile=97,invert=true,cfacing=north}},
+    {button,117,12,{invert=true}},
+  },
+  wires={{5,1,4,1}},
+})
+room:new(4,3,{
+  text={
+    {20,40,"nothing here yet! \x82"},
+  },
+})
+end
+world={ 
   tile_at=function(self, pos)
     return mget(pos.x/8, pos.y/8)
   end,
@@ -882,32 +888,15 @@ world={
     return not fget(tile, flag_walk)
   end,
   switch_rooms=function(self, newroom)
-    room=newroom
-    roomcoords=room*128
-    player:room_switched()
-  end,
-  init=function(self)
-    for x,z in pairs(self.rooms) do
-      for y,r in pairs(z) do
-        local coord=v{x,y}
-        local roomcoords=coord*128
-        for a in all(r.actors or {}) do
-          a.room=coord
-          a.pos+=roomcoords
-          if (a.tpos) a.tpos+=coord*16 a.pos=a.tpos*8+4
-        end
-        for w in all(r.wires or {}) do
-          simulation:connect(r.actors[w[1]].connections[w[2]], r.actors[w[3]].connections[w[4]])
-        end
-      end
-    end
+    current_room=newroom
+    roomcoords=current_room.coord*128
   end,
   update=function(self)
     if (connflash > 0) connflash-=1
   end,
   draw_room=function(self)
-    local roomdata=player.in_robot or (self.rooms[room.x] or {})[room.y] or {}
-    local mapcoords=player.in_robot and vector.zero or room*16
+    local roomdata=player.in_robot or current_room
+    local mapcoords=player.in_robot and vector.zero or current_room.coord*16
     if (roomdata.wallcolor) pal(12, roomdata.wallcolor)
     map(mapcoords.x, mapcoords.y, roomcoords.x, roomcoords.y, 16, 16)
     pal()
@@ -977,7 +966,7 @@ playerclass=actor:copy({
     if self.holding then
       if (self.holding.action2) self.holding:action2()
     else
-      for a in all(actors) do
+      for a in all(self.room.actors) do
         if (a != self and self:touching(a) and a.action2) a:action2() return
       end
       self:solder()
@@ -987,7 +976,7 @@ playerclass=actor:copy({
     if self.holding then
       self.holding=nil
     else
-      for a in all(actors) do
+      for a in all(self.room.actors) do
         if self:touching(a) then
           if (a.movable) self.holding=a
           if (a.interact) a:interact(self)
@@ -1003,11 +992,13 @@ playerclass=actor:copy({
     local target
     local solder_start=self.solder_start
     local closest=solder_distance+.1
-    for c in all(connections) do
-      local d=(self.pos-c:connpos()):length() 
-      if d < closest then
-        target=c closest=d
-        break
+    for a in all(self.room.actors) do
+      for c in all(a.connections) do
+        local d=(self.pos-c:connpos()):length() 
+        if d < closest then
+          target=c closest=d
+          break
+        end
       end
     end
     if not target then
@@ -1031,6 +1022,7 @@ playerclass=actor:copy({
     connflash=connflash_time
   end,
   room_switched=function(self)
+    actor.room_switched(self)
     self.solder_start=nil
   end,
   draw=function(self)
@@ -1049,7 +1041,7 @@ cartdata_base=0x5e00
 function _init()
   cartdata("codekitchen_circuits_v1")
   set_devmode()
-  world:init()
+  init_world()
   local start_pos=v{150,498}
   player=playerclass:new(start_pos)
 end
@@ -1065,8 +1057,7 @@ function _update()
 end
 
 function room_check()
-  local proom=player.pos:world_to_room()
-  if (proom != room) world:switch_rooms(proom)
+  if (player.room != current_room) world:switch_rooms(player.room)
 end
 
 function move_cam()
