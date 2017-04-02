@@ -4,8 +4,6 @@ __lua__
 -- circuits
 -- by codekitchen
 
--- ** generic gamelib **
-
 layer = {
   bg = 1,
   main = 2,
@@ -20,9 +18,9 @@ vector = {}
 vector.__index = vector
 function vector.new(o)
   if (not o) return vector.zero
-  local v = { x = (o.x or o[1]), y = (o.y or o[2]), id=o.id }
-  setmetatable(v, vector)
-  return v
+  merge(o, { x = (o.x or o[1]), y = (o.y or o[2]) })
+  setmetatable(o, vector)
+  return o
 end
 v=vector.new
 vector.zero=v{0,0}
@@ -56,15 +54,6 @@ function vector:normalize()
   local len = self:length()
   return v{ self.x / len, self.y / len }
 end
-function vector:facing()
-  if abs(self.x) > abs(self.y) then
-    if (self.x > 0) return east
-    return west
-  else
-    if (self.y > 0) return south
-    return north
-  end
-end
 function vector:overlap(p1, p2)
   return self.x >= p1.x and self.x <= p2.x and self.y >= p1.y and self.y <= p2.y
 end
@@ -78,9 +67,9 @@ function vector:world_to_tile()
   return v{ flr(self.x/8), flr(self.y/8) }
 end
 north = v{  0, -1, id=1 }
-west  = v{ -1,  0, id=2 }
+west  = v{ -1,  0, id=2, horiz=true }
 south = v{  0,  1, id=3 }
-east  = v{  1,  0, id=4 }
+east  = v{  1,  0, id=4, horiz=true }
 id_to_dir={north, west, south, east}
 function vector:turn_left()
   return id_to_dir[(self.id%4)+1]
@@ -209,35 +198,6 @@ function draw_actors()
   end
 end
 
--- base particle system type
-psys=actor:copy({
-  particles={},
-  lifetime=30,
-  nparts=10,
-  gravity=.5,
-  initsys=function(self)
-    for i=1,self.nparts do
-      self.particles[i]={x=0,y=0,dx=0,dy=0}
-      self:initp(self.particles[i])
-    end
-  end,
-  update=function(self)
-    for p in all(self.particles) do
-      p.dy += self.gravity
-      p.x += p.dx
-      p.y += p.dy
-    end
-    self.lifetime -= 1
-    if (self.lifetime <= 0) self:delete()
-  end,
-  draw=function(self)
-    for p in all(self.particles) do
-      self:drawp(p)
-    end
-  end,
-})
-
--- ** game code **
 tick=0
 tickframes=8
 wire_color=7
@@ -248,10 +208,6 @@ connflash=0
 connflash_time=20
 connections={}
 connection=object:copy({
-  _pos=vector.zero,
-  conn=nil,
-  owner=nil,
-  powered=false,
   cposs={v{0, -3}, v{-3, 0}, v{0, 3}, v{3, 0}},
   initialize=function(self,x,y,args)
     self._pos=v{x,y}
@@ -270,12 +226,9 @@ connection=object:copy({
   basepos=function(self)
     return self._pos + self.owner.pos
   end,
-  horiz=function(self)
-    return self.facing == east or self.facing == west
-  end,
   draw=function(self)
     local drawpos=self:basepos()+self.offs[self.facing.id]
-    local dspr=self.spr+(self:horiz() and 2 or 0)
+    local dspr=self.spr+(self.facing.horiz and 2 or 0)
     if (self.powered) pal(wire_color, powered_color)
     if connflash>0 and connflash_check(self) then
       if ((flr(connflash/5))%2==1) pal(wire_color, connflash_color)
