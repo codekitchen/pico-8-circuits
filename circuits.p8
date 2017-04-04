@@ -553,7 +553,7 @@ button=component:copy({
 })
 robot_spawner=component:copy({
   connections={i(-8,0)},
-  robot_name='main',
+  robot_id=1,
   tick=function(self)
     local waspowered=self.powered
     self.powered=self.c.powered
@@ -562,15 +562,15 @@ robot_spawner=component:copy({
   spawn=function(self)
     local robot
     for a in all(robots) do
-      if (a.name == self.robot_name) robot=a
+      if (a.id == self.robot_id) robot=a
     end
-    robot=robot or robotclass:new(self.pos,{name=self.robot_name})
+    robot=robot or robotclass:new(self.pos,{id=self.robot_id})
     robot:spawned(self.pos)
   end,
 })
 
 bumper_color=7
-robot_room_coords=v{0,1280}
+robot_room_coords=v{0,512}
 robots={}
 robotclass=component:copy({
   movable=true,
@@ -579,6 +579,7 @@ robotclass=component:copy({
   wallcolor=6,
   bumpers={},
   thrusters={},
+  id=1,
   action2=function(self)
     self.player_pos=player.pos
     player:teleport(self.room_coords+v{26,108})
@@ -591,14 +592,7 @@ robotclass=component:copy({
   initialize=function(self,...)
     component.initialize(self,...)
     add(robots,self)
-    self.room_coords=robot_room_coords
-    -- this is a lot of rooms, roughly 60k,
-    -- but that's still exhaustible. should
-    -- be ok because i'm re-using robots
-    -- based on name, not always spawning
-    -- new ones.
-    robot_room_coords=robot_room_coords+v{128,0}
-    if (robot_room_coords.x>30000) robot_room_coords=v{0,robot_room_coords.y+128}
+    self.room_coords=robot_room_coords+v{self.id * 128, 0}
     self.robot_room=room:new(self.room_coords.x/128,self.room_coords.y/128,{
       actors={
         {empty_output,60,8,{cfacing=south}},
@@ -826,7 +820,7 @@ room:new(1,3,{
 })
 room:new(2,2,{
   actors={
-    {robotclass,90,60,{tutorial=true}},
+    {robotclass,90,60,{id=0,tutorial=true}},
     {door,120,92,{cfacing=west,doorway={-6,-1,-1,-1},walltile=97,invert=true}},
     {button,117,114,{invert=true}},
     {button,11,114,{flipx=true}},
@@ -895,7 +889,7 @@ world={
     if (connflash > 0) connflash-=1
   end,
   draw_room=function(self)
-    local roomdata=current_room
+    local roomdata=current_room.robot or current_room
     local mapcoords=current_room.robot and vector.zero or current_room.coord*16
     if (roomdata.wallcolor) pal(12, roomdata.wallcolor)
     map(mapcoords.x, mapcoords.y, roomcoords.x, roomcoords.y, 16, 16)
