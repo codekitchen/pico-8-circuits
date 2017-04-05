@@ -4,6 +4,7 @@ __lua__
 -- circuits
 -- by codekitchen
 
+allow_devmode=true
 layer = {
   bg = 1,
   main = 2,
@@ -17,6 +18,11 @@ s1=[[ strings! ]]
 function merge(dest, src)
   for k, v in pairs(src) do
     dest[k] = copy(v)
+  end
+end
+function concat(dest, src)
+  for i=1,#src do
+    dest[1+#dest]=src[i]
   end
 end
 
@@ -135,43 +141,64 @@ object={
   initialize=function(self) end,
 }
 
+all_actors={}
 actor=object:copy({
   initialize=function(self,pos,args)
     self.pos=pos
     if (args) merge(self, args)
     self:setroom()
+    add(all_actors,self)
   end,
+  start=function(self) end,
   delete=function(self)
     if (self.room) del(self.room.actors, self)
+    del(all_actors,self)
   end,
   pos=vector.zero,
+  roompos=function(self)
+    return self.pos-roomcoords
+  end,
   spr=1,
   w=1,
   h=1,
   layer=layer.main,
+  actor_update=function(self)
+    if (not self.started) self:start() self.started=true
+    self:update()
+  end,
   update=function(self) end,
   draw=function(self)
     if (self.hide) return
-    spr(self.spr, self.pos.x - self.w*4, self.pos.y - self.h*4, self.w, self.h, self.flipx, self.flipy)
+    local w,h=flr(self.w),flr(self.h)
+    spr(self.spr, self.pos.x - w*4, self.pos.y - h*4, w, h, self.flipx, self.flipy)
   end,
   touching=function(self,other)
     local x=self.pos.x - other.pos.x
     local y=self.pos.y - other.pos.y
     return abs(x) < (self.w*4 + other.w*4) and abs(y) < (self.h*4 + other.h*4)
   end,
+  touch=function(self,other) end,
   move=function(self,dist,speed)
     speed=speed or 1
     local newpos=self.pos+dist*speed
     if (not self:walkable(newpos)) newpos=self.pos+dist
+    local o={w=self.w,h=self.h,pos=newpos}
+    for a in all(self.room.actors) do
+      if (a != self and a:touching(o)) a:touch(self)
+    end
     if self:walkable(newpos) then
       self.pos=newpos
       self:setroom()
+      return true
     end
+  end,
+  stuck=function(self)
+    return not self:walkable(self.pos)
   end,
   walkable=function(self,pos)
     if (self.player and devmode) return true
     -- assumes actor of size 1 for now
-    return world:walkable(self, pos+v{-3,2}) and world:walkable(self, pos+v{2,-3}) and world:walkable(self, pos-3) and world:walkable(self, pos+2)
+    return world:walkable(self, pos+v{-2,1}) and world:walkable(self, pos+v{1,-2}) and world:walkable(self, pos+v{-2,-2}) and world:walkable(self, pos+v{2,1})
   end,
   setroom=function(self)
     local r=getroom(self.pos:world_to_room())
@@ -187,10 +214,8 @@ actor=object:copy({
 
 function update_actors()
   -- update in all rooms, not just current
-  for i,room in pairs(rooms) do
-    for a in all(room.actors) do
-      a:update()
-    end
+  for a in all(all_actors) do
+    a:actor_update()
   end
 end
 
@@ -236,7 +261,7 @@ connection=object:copy({
     pal()
   end,
   can_solder=function(self)
-    return self.conn == nil
+    return not self.locked and self.conn == nil
   end,
 })
 input=connection:copy({
@@ -296,12 +321,14 @@ component=actor:copy({
   connections={},
   powered=false,
   facing=south,
+  cshow=true,
   initialize=function(self, ...)
     actor.initialize(self, ...)
     foreach(self.connections, function(c) c:add(self) end)
     self.c=self.connections[1]
     if (self.coffs) self.c._pos+=self.coffs
     if (self.cfacing) self.c.facing=self.cfacing
+    if (not self.cshow) self.c.spr=0
   end,
   draw=function(self)
     foreach(self.connections, function(c) c:draw() end)
@@ -365,6 +392,7 @@ empty_input=component:copy({
 })
 empty_output=component:copy({
   connections={o(0,0)},
+  cfacing=north,
   tick=function(self)
     self.c.powered=self.powered
   end,
@@ -383,26 +411,86 @@ timed=component:copy({
     self.ticks=self.timing[self.powered and 1 or 2]
   end,
 })
-door=component:copy({
-  connections={i(0,0)},
-  walltile=64,
+doorbase=component:copy({
   transition_tile=65,
   current=0,
   powered=nil,
+  facing=west,
+  initialize=function(self,...)
+    component.initialize(self,...)
+    if (not self.walltile) self.walltile = self.facing.horiz and 97 or 80
+  end,
   tick=function(self)
     local prev=self.open
-    self.powered=self.c.powered
     self.open=self.powered
     if (self.invert) self.open=not self.open
     if prev != self.open or self.current == self.transition_tile then
       self.current=self.open and 0 or self.walltile
       if (not prev and self.open and self.transition_tile) self.current=self.transition_tile
-      for x=self.pos.x+self.doorway[1]*8,self.pos.x+self.doorway[3]*8 do
-        for y=self.pos.y+self.doorway[2]*8,self.pos.y+self.doorway[4]*8 do
-          world:tile_set(v({x,y}),self.current)
-        end
+      self:set_tiles()
+      if (player:stuck()) self.open=true self.current=0 self:set_tiles()
+    end
+  end,
+  set_tiles=function(self)
+    for x=self.pos.x+self.doorway[1]*8,self.pos.x+self.doorway[3]*8 do
+      for y=self.pos.y+self.doorway[2]*8,self.pos.y+self.doorway[4]*8 do
+        world:tile_set(v({x,y}),self.current)
       end
     end
+  end,
+})
+door=doorbase:copy({
+  connections={i(0,0)},
+  tick=function(self)
+    self.powered=self.c.powered
+    doorbase.tick(self)
+  end,
+})
+key_colors={2,3,8}
+keydoor=doorbase:copy({
+  spr=21,
+  w=1.2,
+  h=1.2,
+  initialize=function(self,...)
+    doorbase.initialize(self,...)
+  end,
+  start=function(self)
+    if peek(cartdata_base+self.id)>0 then
+      for a in all(all_actors) do
+        if (a.key and a.id == self.id) self:powerup(a)
+      end
+    end
+  end,
+  reset_progress=function(self)
+    poke(cartdata_base+self.id, 0)
+  end,
+  touch=function(self,other)
+    local h=other.holding
+    if h and h.key and h.id == self.id then
+      self:powerup(h)  
+      other:drop()
+    end
+  end,
+  powerup=function(self,key)
+    self.powered=true
+    key.pos=self.pos
+    key:setroom()
+    poke(cartdata_base+self.id, 0xff)
+  end,
+  draw=function(self)
+    pal(12, self.powered and 12 or key_colors[self.id])
+    doorbase.draw(self)
+    pal()
+  end,
+})
+key=component:copy({
+  key=true,
+  movable=true,
+  spr=5,
+  draw=function(self)
+    pal(8, key_colors[self.id])
+    component.draw(self)
+    pal()
   end,
 })
 toggle=component:copy({
@@ -529,13 +617,16 @@ track_replacer=component:copy({
   end,
 })
 button=component:copy({
-  connections={o(4,2)},
+  connections={o(4,-3)},
   pressed=0,
   reset=-1,
   initialize=function(self,...)
     component.initialize(self,...)
-    self.c.spr=0
-    if (self.flipx) self.c._pos-=v({9,0})
+    if (self.flipx) self.c._pos-=v({11,0})
+    self:setspr()
+  end,
+  setspr=function(self)
+    self.spr=self.pressed==0 and 58 or 59
   end,
   tick=function(self)
     if self.pressed>0 then
@@ -544,11 +635,11 @@ button=component:copy({
     self.powered=self.pressed!=0
     if (self.invert) self.powered=not self.powered
     self.c.powered=self.powered
-    self.spr=self.pressed==0 and 58 or 59
+    self:setspr()
   end,
   interact=function(self)
     self.pressed=self.reset
-    self.spr=self.pressed==0 and 58 or 59
+    self:setspr()
   end,
 })
 robot_spawner=component:copy({
@@ -588,50 +679,75 @@ robotclass=component:copy({
     self.pos=pos
     self.switch.powered=false
     self:setroom()
+    if self.id == 0 then
+      self.switch.powered=true
+    end
   end,
   initialize=function(self,...)
     component.initialize(self,...)
     add(robots,self)
     self.room_coords=robot_room_coords+v{self.id * 128, 0}
-    self.robot_room=room:new(self.room_coords.x/128,self.room_coords.y/128,{
-      actors={
+    local actors={
+      {switch,19,95},
+      -- always-on outputs
+      {empty_output,82,112,{powered=true}},
+      {empty_output,88,112,{powered=true}},
+      {empty_output,94,112,{powered=true}},
+      -- thrusters
+      {empty_input,76,16,{cfacing=south}},
+      {empty_input,16,51,{cfacing=east}},
+      {empty_input,51,111,{cfacing=north}},
+      {empty_input,111,76,{cfacing=west}},
+    }
+    if self.id>0 then
+      concat(actors,{
+        -- bumpers
         {empty_output,60,8,{cfacing=south}},
         {empty_output,8,67,{cfacing=east}},
         {empty_output,67,119,{cfacing=north}},
         {empty_output,119,60,{cfacing=west}},
-        {empty_input,76,16,{cfacing=south}},
-        {empty_input,16,51,{cfacing=east}},
-        {empty_input,51,111,{cfacing=north}},
-        {empty_input,111,76,{cfacing=west}},
+        -- components
         {toggle,100,84},
+      })
+    end
+    if self.id>1 then
+      concat(actors,{
+        -- more components
         {toggle,100,100},
-        {switch,19,95},
         {or_,89,27},
         {and_,97,27},
         {and_,105,27},
         {not_,86,44},
         {not_,94,44},
         {or_,102,44},
-      },
-    })
+      })
+    end
+    self.robot_room=room:new(self.room_coords.x/128,self.room_coords.y/128,{ actors=actors, })
+    self.actors=self.robot_room.actors
     self.robot_room.robot=self
     for i=1,4 do
-      self.bumpers[i]=self.robot_room.actors[i]
-      self.thrusters[i]=self.robot_room.actors[i+4]
+      self.thrusters[i]=self.actors[i+4]
+      self.bumpers[i]=self.actors[i+8]
     end
-    self.switch=self.robot_room.actors[11]
+    self.switch=self.actors[1]
     self.switch.c.spr=0
-    if self.tutorial then
-      self.switch.powered=true
-      simulation:connect(self.bumpers[1].connections[1],self.robot_room.actors[9].connections[2])
-      simulation:connect(self.bumpers[3].connections[1],self.robot_room.actors[9].connections[1])
-      simulation:connect(self.thrusters[1].connections[1],self.robot_room.actors[9].connections[4])
-      simulation:connect(self.thrusters[3].connections[1],self.robot_room.actors[9].connections[3])
+    if self.id == 0 then
+      simulation:connect(self.actors[2],self.thrusters[2])
       self.text={
-        {23,92,"\x8bpower"},
-        {25,106,"\x8bexit"},
-        {19,65,"\x8bbumper"},
-        {23,49,"\x8bthrust"},
+        {18,84,"\x83power"},
+        {24,106,"\x8bexit"},
+        {20,44,"\x8bthrust"},
+        {73,24,"\x94thrust"},
+        {88,68,"thrust\n  \x91"},
+        {48,98,"\x83thrust"},
+      }
+    end
+    if self.id == 1 then
+      self.text={
+        {20,65,"\x8bbumper"},
+        {58,22,"\x94bumper"},
+        {78,58,"bumper\x91"},
+        {64,102,"\x83bumper"},
       }
     end
   end,
@@ -642,16 +758,20 @@ robotclass=component:copy({
     if (player.pos:overlap(self.room_coords+v{16,108},self.room_coords+v{20,112})) player:teleport(self.player_pos)
     if (player.holding == self) self.switch.powered=false
     local b=self.bumpers
-    b[1].powered=not world:walkable(self, self.pos+v{0,-5})
-    b[2].powered=not world:walkable(self, self.pos+v{-5,0})
-    b[3].powered=not world:walkable(self, self.pos+v{0,4})
-    b[4].powered=not world:walkable(self, self.pos+v{4,0})
+    if b[1] then
+      b[1].powered=not world:walkable(self, self.pos+v{0,-5})
+      b[2].powered=not world:walkable(self, self.pos+v{-5,0})
+      b[3].powered=not world:walkable(self, self.pos+v{0,4})
+      b[4].powered=not world:walkable(self, self.pos+v{4,0})
+    end
     if self:active() then
       local t=self.thrusters
-      if (t[1].powered) self:move(south*.5)
-      if (t[2].powered) self:move(east*.5)
-      if (t[3].powered) self:move(north*.5)
-      if (t[4].powered) self:move(west*.5)
+      if t[1] then
+        if (t[1].powered) self:move(south*.5)
+        if (t[2].powered) self:move(east*.5)
+        if (t[3].powered) self:move(north*.5)
+        if (t[4].powered) self:move(west*.5)
+      end
 
       for a in all(self.room.actors) do
         if (self:touching(a) and a.interact) self:interact_with(a)
@@ -677,30 +797,28 @@ robotclass=component:copy({
     self.draw_bumper(self.bumpers[4],pos.x+4,pos.y-2,pos.x+4,pos.y+1)
   end,
   draw_bumper=function(r,a,b,c,d)
-    line(a,b,c,d,r.powered and powered_color or bumper_color)
+    line(a,b,c,d,(r and r.powered or false) and powered_color or bumper_color)
   end,
 })
 
 simulation={
   tick=function(self)
-    for i,room in pairs(rooms) do
-      for a in all(room.actors) do
-        if(a.tick) a:tick()
-      end
+    for a in all(all_actors) do
+      if(a.tick) a:tick()
     end
-    for i,room in pairs(rooms) do
-      for a in all(room.actors) do
-        for c in all(a.connections or {}) do
-          if (c.input and not c.conn) c.powered=false
-          if c.output then
-            if (c.wire) c.wire.powered=c.powered
-            if (c.conn) c.conn.powered=c.powered
-          end
+    for a in all(all_actors) do
+      for c in all(a.connections or {}) do
+        if (c.input and not c.conn) c.powered=false
+        if c.output then
+          if (c.wire) c.wire.powered=c.powered
+          if (c.conn) c.conn.powered=c.powered
         end
       end
     end
   end,
   connect=function(self, a, b, args)
+    if (a.connections) a=a.connections[1]
+    if (b.connections) b=b.connections[1]
     a.conn=b b.conn=a
     wire:new(a, b, args)
   end,
@@ -717,7 +835,6 @@ flag_robot_walk=7
 roomsidx={{},{},{},{},{},{}}
 rooms={}
 room=object:copy({
-  actors={},
   initialize=function(self,x,y,args)
     self.coord=v{x,y}
     merge(self, args)
@@ -746,121 +863,66 @@ getroom=function(v)
   return room:new(v.x, v.y, {})
 end
 function init_world()
-room:new(0,2,{
-  text={
-    {10,10,"combine logic gates"},
-    {10,17,"to build mechanisms"},
-    {40,98,"use the or gate"},
-    {40,105,"to open this door"},
-    {12,35,"and gate"},
-    {60,35,"not gate"},
-    {117,62,"\x91"},
-  },
+robotclass:new(v{0,0},{id=0})
+robotclass:new(v{0,0},{id=1})
+room:new(1,0,{
   actors={
-    {timed,18,120},
-    {timed,29, 120, {powered=true}},
-    {door,24,87, {doorway={1,0,2,0}}},
-    {and_,23,56},
-    {switch,18, 76},
-    {switch,28, 76},
-    {door,48, 45, {doorway={0,1,0,2},cfacing=west}},
-    {switch,60, 76, {powered=true}},
-    {not_,68,56},
-    {door,96, 45, {doorway={0,1,0,2},cfacing=west}},
-    {train_spawn,100,4},
+    {button,11,68,{cshow=false,flipx=true,reset=2,coffs=v{2,5}}},
+    {door,60,51,{doorway={1,0,6,0},cfacing=west,walltile=64}},
+    {button,19,108,{cshow=false,flipx=true,reset=2,coffs=v{2,5}}},
+    {robot_spawner,16,96,{cfacing=west,robot_id=0,coffs=v{-2,0}}},
   },
-  wires={{4,3,7,1}, {8,1,9,1}, {9,2,10,1}},
-})
-room:new(0,3,{
+  wires={{1,1,2,1},{4,1,3,1}},
   text={
-    {20,112,"\x8btoggle switch with z"},
-    {12,64,"solder wires with x"},
-    {12,71,"add/remove wires at"},
-    {12,78,"inputs and outputs"},
-    {60,20,"or gate->"},
-    {60,31,"carry with z"},
-    {60,38,"into next room"},
-    {100,5,"\x94"},
+    {12,13,"hi, robot!\n\ncarry the robot with z\nclimb inside with x\nand you can rewire it!"},
   },
+})
+room:new(1,1,{
   actors={
-    {switch,12,116},
-    {door,29,94, {doorway={1,0,2,0}}},
-    {switch,12,44},
-    {door,49,20, {doorway={0,1,0,2}, cfacing=west}},
-    {or_,112,20},
+    {door,20,84,{cfacing=south,coffs=v{0,3},doorway={1,0,3,0}}},
+    {button,11,116,{flipx=true,reset=5,cfacing=east,coffs=v{3,-5}}},
+    {door,88,52,{facing=south,cfacing=west,doorway={0,1,0,2}}},
+    {button,11,76,{flipx=true,cfacing=east,coffs=v{3,-5}}},
+    {button,19,28,{cshow=false,flipx=true,reset=2,coffs=v{2,5}}},
+    {robot_spawner,16,16,{cfacing=west,robot_id=0,coffs=v{-2,0}}},
+    {button,117,16,{cfacing=south,cshow=false}},
+    {door,60,44,{doorway={0,-4,0,-1},facing=north,cfacing=east}},
+    {key,113,73,{id=1}},
+    {keydoor,20,44,{id=1,doorway={1,0,3,0}}},
   },
-  wires={{1,1,2,1}},
+  wires={{2,1,1,1},{6,1,5,1},{7,1,8,1}},
+  text={
+    {20,113,"\139toggle button with z"},
+    {20,66,"\139solder wires\n   with x",true},
+    {74,26,"carry items\n   with z\131",true},
+  },
+  update=function(self)
+    self.actors[1].c.locked=true
+    self.actors[2].c.locked=true
+    if player:roompos().y<78 then
+      self.text[2][4]=nil
+      if (player:roompos().x>96) self.text[3][4]=nil
+    end
+  end,
 })
-room:new(1,2,{
+room:new(2,0,{
   actors={
-    {toggle,30, 70},
-    {actor_sensor,20,28, {coffs=v{0,2},cfacing=south}},
-    {actor_sensor,60,44, {coffs=v{0,2},cfacing=south}},
-    {track_replacer,44,28,{coffs=v{-2,4},cfacing=west,tile=7}},
-    {actor_sensor,108,20, {coffs=v{2,0},cfacing=east,sq={0,1}}},
-    {toggle,104,60},
-    {door,78,50, {doorway={0,1,0,4},cfacing=east}},
-    {and_,107,76},
-    {actor_sensor,92,8,{coffs=v{-2,0},cfacing=west,sq={0,1}}},
-    {train_spawn,104,0,{interval=0}},
-  },
-  text={
-    {12,102,"toggles retain"},
-    {12,109,"their last value"},
-    {117,70,"\x91"},
-  },
-  wires={{2,1,1,1},{3,1,1,2},{4,1,1,4},{5,1,8,2},{8,3,6,2},{6,4,7,1},{9,1,8,1}},
-})
-room:new(1,3,{
-  text={
-    {5,102,"\x8btutorial"},
-    {100,25,"game\x91"},
-    {28,54,"     circuits!\n(err: logo missing)"},
+    {key,56,110,{id=2}},
   },
 })
-room:new(2,2,{
+room:new(2,1,{
   actors={
-    {robotclass,90,60,{id=0,tutorial=true}},
-    {door,120,92,{cfacing=west,doorway={-6,-1,-1,-1},walltile=97,invert=true}},
-    {button,117,114,{invert=true}},
-    {button,11,114,{flipx=true}},
-    {door,14,123,{facing=west,doorway={1,0,2,1}}},
+    {keydoor,36,92,{id=2,doorway={-3,0,-1,0}}},
+    {button,19,28,{cshow=false,flipx=true,reset=2,coffs=v{2,5}}},
+    {robot_spawner,16,16,{cfacing=west,robot_id=1,coffs=v{-2,0}}},
+    {button,117,112,{cshow=false,cfacing=south}},
+    {door,85,36,{doorway={0,-3,0,-1},cfacing=east,walltile=64}},
+    {key,104,22,{id=3}},
+    {keydoor,124,28,{id=3,doorway={0,-2,1,-1},facing=north}},
   },
-  wires={{2,1,3,1},{4,1,5,1}},
+  wires={{3,1,2,1},{4,1,5,1}},
   text={
-    {14,12,"this is a robot\x91\nhi robot!\nits bumpers sense walls\nthrusters move it around\n\nyou can carry it around\nand press x to climb in\nand rewire its insides!"},
-    {14,92,"move the robot over\nto press this button\x91\nyou'll need to switch it\nback on after moving"},
-  },
-})
-room:new(2,3,{
-  actors={
-    {actor_sensor,104,92,{coffs=v{0,-2},cfacing=north}},
-    {actor_sensor,112,28,{coffs=v{0,2},cfacing=south}},
-    {toggle,102,72},
-    {track_replacer,84,60,{coffs=v{3,2},tile=38}},
-    {door,66,6,{doorway={-1,1,-1,14},walltile=80,invert=true}},
-    {button,117,14,{invert=true}},
-    {button,27,116,{flipx=true,reset=2}},
-    {robot_spawner,22,100,{cfacing=west}},
-  },
-  wires={{1,1,3,2},{2,1,3,1},{3,4,4,1},{6,1,5,1},{8,1,7,1}},
-  text={
-    {10,121,"robots"},
-  },
-})
-room:new(3,3,{
-  actors={
-    {train_spawn,52,52},
-    {train_spawn,36,44,{interval=0,flipy=true}},
-    {train_spawn,36,76,{interval=0}},
-    {door,82,81,{doorway={-2,0,-1,0},walltile=97,invert=true,cfacing=north}},
-    {button,117,12,{invert=true}},
-  },
-  wires={{5,1,4,1}},
-})
-room:new(4,3,{
-  text={
-    {20,40,"nothing here yet! \x82"},
+    -- {10,50,"  use\nkeycard\nto save\n game"},
   },
 })
 end
@@ -873,7 +935,7 @@ world={
   end,
   walkable=function(self, actor, pos)
     -- hacky robot room handling
-    if pos.y >= 1280 then
+    if pos.y >= 512 then
       pos.x = pos.x % 128
       pos.y = pos.y % 128
     end
@@ -887,6 +949,7 @@ world={
   end,
   update=function(self)
     if (connflash > 0) connflash-=1
+    if (current_room and current_room.update) current_room:update()
   end,
   draw_room=function(self)
     local roomdata=current_room.robot or current_room
@@ -895,7 +958,7 @@ world={
     map(mapcoords.x, mapcoords.y, roomcoords.x, roomcoords.y, 16, 16)
     pal()
     for t in all(roomdata.text or {}) do
-      print(t[3], t[1]+roomcoords.x, t[2]+roomcoords.y, text_color)
+      if (not t[4]) print(t[3], t[1]+roomcoords.x, t[2]+roomcoords.y, text_color)
     end
   end,
 }
@@ -903,6 +966,10 @@ world={
 solder_distance=4
 devmode_playerpos=62
 playerclass=actor:copy({
+  spr=41,
+  sprs={41,42,43,44,45},
+  sidx=1,
+  swt=4,
   player=true,
   layer=layer.player,
   holding=nil,
@@ -914,6 +981,8 @@ playerclass=actor:copy({
     if (devmode) self.pos=vector.dget(devmode_playerpos) self:setroom()
   end,
   update=function(self)
+    local oldpos=self.pos
+    self.didmove=false
     if (btn(0)) self:move(west)
     if (btn(1)) self:move(east)
     if (btn(2)) self:move(north)
@@ -921,20 +990,27 @@ playerclass=actor:copy({
     if (btn(4)) self.btn4+=1
     if (btn(5)) self.btn5+=1
     self:action_check()
+    if self.didmove then
+      self.swt-=1
+      if (self.swt==0) self.sidx=(self.sidx%#self.sprs)+1 self.swt=4
+      self.spr=self.sprs[self.sidx]
+    end
   end,
   move=function(self,dist)
+    self.didmove=true
     local speed=1
     local oldpos=self.pos
     if (self.btn4>3) speed=3 self.did_run=true
     actor.move(self,dist,speed)
     if self.holding then
       self.holding:move(self.pos-oldpos)
-      if (not self:touching(self.holding)) self.holding=nil
+      if (not self:touching(self.holding)) self:drop()
     end
     self.pos:dset(devmode_playerpos)
+    if (dist.horiz) self.flipx=dist==west
   end,
   teleport=function(self,pos)
-    self.holding=nil
+    self:drop()
     self.pos=pos
     self:setroom()
   end,
@@ -968,15 +1044,19 @@ playerclass=actor:copy({
   end,
   pickup=function(self)
     if self.holding then
-      self.holding=nil
+      self:drop()
     else
       for a in all(self.room.actors) do
         if self:touching(a) then
-          if (a.movable) self.holding=a
+          if (a.movable) self.holding=a a.held_by=self
           if (a.interact) a:interact(self)
         end
       end
     end
+  end,
+  drop=function(self)
+    if (self.holding) self.holding.held_by=nil
+    self.holding=nil
   end,
   solder_start=nil,
   can_solder=function(a,b)
@@ -999,7 +1079,7 @@ playerclass=actor:copy({
       if (solder_start) self.solder_start=nil return
     elseif not solder_start then
       if (target:can_solder()) self.solder_start=target return
-      if (target.conn) simulation:disconnect(target) return
+      if (target.conn and not target.locked) simulation:disconnect(target) return
     else
       if self.can_solder(solder_start, target) then
         simulation:connect(solder_start, target, {draw_type=self.wire_type})
@@ -1009,7 +1089,7 @@ playerclass=actor:copy({
     end
     -- nothing found, flash connections to signal player
     if not solder_start then
-      connflash_check=function() return true end
+      connflash_check=function(c) return c:can_solder() end
     else
       connflash_check=function(c) return self.can_solder(solder_start, c) end
     end
@@ -1025,19 +1105,32 @@ playerclass=actor:copy({
       local bpos=self.pos
       wire.draw_types[self.wire_type](apos, bpos, wire_color)
     end
-    local color=10
-    rect(self.pos.x-2, self.pos.y-2, self.pos.x+1, self.pos.y+1, color)
+    if self.solder_start then
+      spr(46, self.pos.x-2, self.pos.y-2)
+    else
+      actor.draw(self)
+    end
   end,
 })
 
 cartdata_base=0x5e00
 
 function _init()
-  cartdata("codekitchen_circuits_v1")
+  init_savedata()
   set_devmode()
   init_world()
-  local start_pos=v{150,498}
+  local start_pos=v{270,240}
   player=playerclass:new(start_pos)
+end
+
+function init_savedata()
+  cartdata("codekitchen_circuits_v1")
+  menuitem(5, "reset progress", function()
+    for a in all(all_actors) do
+      if (a.reset_progress) a:reset_progress()
+    end
+    run()
+  end)
 end
 
 function _update()
@@ -1068,12 +1161,13 @@ end
 
 function draw_dbg()
   camera()
-  print(player.pos:str(),2,122,7)
+  print(player.pos:str()..player:roompos():str(),2,122,7)
 end
 
 function set_devmode()
+  if (not allow_devmode) return
   devmode=peek(cartdata_base)>0
-  menuitem(5, "devmode"..(devmode and " \x82" or ''), function() poke(cartdata_base, devmode and 0 or 1) set_devmode() end)
+  menuitem(4, "devmode"..(devmode and " \x82" or ''), function() poke(cartdata_base, devmode and 0 or 1) set_devmode() end)
 end
 
 function dbg(str)
@@ -1081,29 +1175,29 @@ function dbg(str)
 end
 __gfx__
 000000000700000000700000070000000070000000000000000000000000000000000000cccccccc000660000000000000000000000000000000000000000000
-000000007070000007070000707770000700000000000000000000000000000000000000cccccccc066666600000000000000000000000000000000000000000
-000000000700000070707000070000007077700000000000005555555555555555555500cc0000cc066565600000000000000000000000000000000000000000
-000000000700000000700000000000000700000000000000005400400040004004004500cc0000cc665656660000000000000000000000000000000000000000
-00000000070000000070000000000000007000000000000000504040004000400404050000000000666565660000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000500555555555555550050000000000065656600000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000544500000000000054450000000000066666600000000000000000000000000000000000000000
+000000007070000007070000707770000700000000888800000000000000000000000000cccccccc066666600000000000000000000000000000000000000000
+000000000700000070707000070000007077700008885800005555555555555555555500cc0000cc066565600000000000000000000000000000000000000000
+000000000700000000700000000000000700000008855880005400400040004004004500cc0000cc665656660000000000000000000000000000000000000000
+00000000070000000070000000000000007000000855858000504040004000400404050000000000666565660000000000000000000000000000000000000000
+00000000000000000000000000000000000000000888888000500555555555555550050000000000065656600000000000000000000000000000000000000000
+00000000000000000000000000000000000000000098989000544500000000000054450000000000066666600000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000500500000000000050050000000000000660000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000500500000330000333000066000000000000000000000000000000000000000000000000000000
-00000000000000000000000044444440044444440000000000500500003553003555330000600000000000000000000000000000000000000000000000000000
-0000000000000000000000004444444004444444000000000054450003a33a3035335a3066600000000000000000000000000000000000000000000000000000
-00000000000000000000000044444444444444440000000000500500035335303533335300060000000000000000000000000000000000000000000000000000
-00040000004440000044400044444444444444440000000000500500353333533533335366660000000000000000000000000000000000000000000000000000
-000400000440440004404400444444400444444400000000005005003533335335335a3000006000000000000000000000000000000000000000000000000000
-00404000040004000400040044444440044444440000000000544500355555533555330066666000000000000000000000000000000000000000000000000000
-00040000440004404400044000000000000000000000000000500500033333300333000000000600000000000000000000000000000000000000000000000000
-00404000400000404000004000000000000000000000000000500500000000000050050000000000000000000000000000000000000000000000000000000000
-04000400400000404004004000000000000000000000000000544500000000000054450000000000000000000000000000000000000000000000000000000000
-40000040400000404040404000000000000000000000000000500555555555555550050000000000000000000000000000000000000000000000000000000000
-44444440444444404400044000000000000000000000000000504040008000800404050000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000540040008000800400450000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000555555555555555555550000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000cccccccc00500500000330000333000066000000000000000000000000000000000000000000000000000000
+0000000000000000000000004444444004444444cc0000cc00500500003553003555330000600000000000000000000000000000000000000000000000000000
+0000000000000000000000004444444004444444c00000cc0054450003a33a3035335a3066600000000000000000000000000000000000000000000000000000
+0000000000000000000000004444444444444444c000000c00500500035335303533335300060000000000000000000000000000000000000000000000000000
+0004000000444000004440004444444444444444c000000c00500500353333533533335366660000000000000000000000000000000000000000000000000000
+0004000004404400044044004444444004444444c000000c005005003533335335335a3000006000000000000000000000000000000000000000000000000000
+0040400004000400040004004444444004444444cc00000c00544500355555533555330066666000000000000000000000000000000000000000000000000000
+0004000044000440440004400000000000000000cccccccc00500500033333300333000000000600000000000000000000000000000000000000000000000000
+00404000400000404000004000000000000000000000000000500500000000000050050000000000000000000222222002222220000000000020000000000000
+040004004000004040040040000000000000000000000000005445000000000000544500022222200222222022f222f222f222f2022222200080000000000000
+40000040400000404040404000000000000000000000000000500555555555555550050022f222f222f222f22f5fff5f2f5fff5f22f222f22808200000000000
+4444444044444440440004400000000000000000000000000050404000800080040405002f5fff5f2f5fff5fffffffffffffffff2f5fff5f0080000000000000
+000000000000000000000000000000000000000000000000005400400080008004004500ffffffffffffffff0ffffff00ffffff0ffffffff0020000000000000
+0000000000000000000000000000000000000000000000000055555555555555555555000ffffff00ffffff006bbbbb606bbbbb60ffffff00000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000006bbbbb606bbbbb6000600600006060006bbbbb60000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000600600006000600000000000000000006006000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0dddd0000dddd0000000000000000000000000000000000000000000000000000000000000000000000b000000000b0000000000000000000000000000000000
 0d0000000d0070000000000000000000000000000000000000000000000000000000000000000000000b000400000b0400000000000000000000000000000000
@@ -1120,18 +1214,18 @@ cccccccc9999999900101010c11cccccc1cc1cc11111cc1c11ccc11c000000000000000000000000
 cccccccc9999999901010100cc11cccccccc1cccccccc11cc11c11cc000000000000000000000000000000000000000000000000000000000000000000000000
 cccccccc9999999900101010ccc11ccccccc1ccccccc11cccc111ccc000000000000000000000000000000000000000000000000000000000000000000000000
 cccccccc9999999900000000cccccccccccc1cccccc11ccccccccccc000000000000000000000000000000000000000000000000000000000000000000000000
-080800800000000000000000c11cccccccccccccccccccccccc1cccc000000000000000000000000000000000000000000000000000000000000000000000000
-080800800000000000000000c111ccccc1111111ccccc11cccc1cccc000000000000000000000000000000000000000000000000000000000000000000000000
-080800800000000000000000c1111cccc1111111cccc111cccc1cccc000000000000000000000000000000000000000000000000000000000000000000000000
-080800800000000000000000c1111111cc11111cccc1111ccc111ccc000000000000000000000000000000000000000000000000000000000000000000000000
-080800800000000000000000c1111cccccc111cc1111111cc11111cc000000000000000000000000000000000000000000000000000000000000000000000000
-080800800000000000000000c111cccccccc1cccccc1111c1111111c000000000000000000000000000000000000000000000000000000000000000000000000
-080800800000000000000000c11ccccccccc1ccccccc111c1111111c000000000000000000000000000000000000000000000000000000000000000000000000
-080800800000000000000000cccccccccccc1cccccccc11ccccccccc000000000000000000000000000000000000000000000000000000000000000000000000
+080880800000000000000000c11cccccccccccccccccccccccc1cccc000000000000000000000000000000000000000000000000000000000000000000000000
+080880800000000000000000c111ccccc1111111ccccc11cccc1cccc000000000000000000000000000000000000000000000000000000000000000000000000
+080880800000000000000000c1111cccc1111111cccc111cccc1cccc000000000000000000000000000000000000000000000000000000000000000000000000
+080880800000000000000000c1111111cc11111cccc1111ccc111ccc000000000000000000000000000000000000000000000000000000000000000000000000
+080880800000000000000000c1111cccccc111cc1111111cc11111cc000000000000000000000000000000000000000000000000000000000000000000000000
+080880800000000000000000c111cccccccc1cccccc1111c1111111c000000000000000000000000000000000000000000000000000000000000000000000000
+080880800000000000000000c11ccccccccc1ccccccc111c1111111c000000000000000000000000000000000000000000000000000000000000000000000000
+080880800000000000000000cccccccccccc1cccccccc11ccccccccc000000000000000000000000000000000000000000000000000000000000000000000000
 08080080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 08080088888888880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 08080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-08080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+08080000888888880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 08088888888888880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 08888888888888880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -1144,67 +1238,67 @@ cccccccc9999999900000000cccccccccccc1cccccc11ccccccccccc000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04040404040404040404040461040404040000607070707070707080046104040404040404040404040404040404040400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000061000004040000627080000004000061006100040400000000000000000000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000062708004040000000061000004000061006100040400000000000000000000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04040404040404040404040404006270707070707061707070708061006100040400000000000000000000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000004000000000004000004040000000061000004006161006100040400000000000000000000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000004000000000004000004040000000062707070708262708200040400000000000000000000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000004000000000004000004040000000000000000040000000000040400000000000000000000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000004000000000004000000000000000000000000040000000000040400000000000000000000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000004000000000004000000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000004000000000004000004040000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04040404000004040404040404040404040000000000000000000000000000040404040404040404040000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000000000004040404040404040404040404040404040400000000000000000000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04040404040404040404040400000404040404040404040404040404040404040404000004040404040404040404040400000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04040404040404040404040400000404040404040404040404040404040404040404000004040404040404040404040404040404040404040404040404040404
+04040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404
 04040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000004000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000404040000000000000004
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
 04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000004000000000000000004040000000000000000000000000000000000000000000000000000000000000404000000000404040000040404000000
-00000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000000000004040000000000000000000000000000000000000000000000000000607070707070707070800404040000040404040404
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
 04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000000000004040000000000000000000000000000000000000000000000000060820000000404000000610404040000000000000004
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
 04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000004000000000000000004040000000000000000000000000000040400000000000000000061000000000404000004610404040000000000000004
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
 04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04040400000004040404040404040404040000000000000000000000000000040404000004040400000061000000000404000004040461040404040404000004
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
 04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000000000004040000000000000000000000000000040400000000000000000060707070707070707070707082040404040404000004
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
 04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000000000004040000000000000000000000000000040400000000000000000061000000000404000004040404040000000000000004
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
 04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000000000004040000000000000000000000000000040400000000000000000061000000000404000004610404040000000000000004
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
 04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000000000004040000000000000000000000000000040400000000000000000062800000000404000000610004040000040404040404
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
 04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04040404000004040404040404040404040000000000000000000000000000040404242424000000000000627070707070707070820004040000040404040404
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
 04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000000000000000000000000000000000000000000040404242424000000000000000000000000000000000004040000000000000004
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
 04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000000000000000000000000000000000000000000040404242424240000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
 04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000000000000000000000000000004040000000000000000000000000000040404042424240000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404
+04040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404
+04040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
+04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+04000000000000000000000000000004040000000000000000000000000000040400000000000000000000000000000404000000000000000000000000000004
 04000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 04040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404
 04040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -1339,41 +1433,41 @@ ccccccccccccccccccccccccccccccccccccccccccccccccccccccccc8c8cc8ccccccccccccccccc
 ccccccccccccccccccccccccccccccccccccccccccccccccccccccccc8c8cc8ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 
 __gff__
-00000000000019150d090000000000000000000000000b000000000000000000000000000000130007000000000000000000000000000000000000000000000001010000000000000000000000000000810000000000000000000000000000008181000000000000000000000000000000000000000000000000000000000000
+00000000000019150d090000000000000000000000010b000000000000000000000000000000130007000000000000000000000000000000000000000000000001010001010101000000000000000000810000010101010000000000000000008181000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
-0000000000000044400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000404000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0040404040404000005440404040400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0040000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0040000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0040000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0040000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0053000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-4000000000000000000000000000004500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-4300000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0040000000000000000000000000550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0040000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0040000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0040000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0040190000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0040404040405600004040404040400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000040460000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000044400000000000000040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0040404040404000005440404040400040000000000000000000000000000040404242424200000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0040000000000000000000000000400040000000000000000000000000000042424242000000000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0040000000000000000000000000400040000000000000000000000000004242424200000000000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0040000000000000000000000000400040000000000000000000000000004242420000000000000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0040000000000000000000000000400040000000000000000000000000424240400000000000000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0053000000000000000000000000400040404040404040404040404040404040400000000000000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004540424200000000500000000000000040400000000000000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4300000000000000000000000000004040420000000000500000000000000040400000000000000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0040000000000000000000000000550040424200000000500000000000000040400000000000000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0040000000000000000000000000400040404040404040400000000000000040400000000000000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0040000000000000000000000000400040424242420000000000000000000040400000000000000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0040000000000000000000000000400040424242000000000000000000000040400000000000000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0040190000000000000000000000400040404242000000000000000000004240400000000000000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0040404040405600004040404040400040424200000000000000000000424240400000000000000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000040460000000000000040404040404040404040404242424040404040404040616140404040404040404040404040404040404040404040404040404040404040404040404040404040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4040404040404040404040404040404040404040404040404040404242424040404040404040616140404040404040404040404040404040404040404040404040404040404040404040404040404040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040424242420000500042424242424240404242424242424242004000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040424242000000500000000042420040404242420000424200004000004242404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040404242000000500000000000000040404042420000000000004000424242154000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040424200000000500000000000000040404242000040404061614040404040404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040401561616140404040404040404040400000000040000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040000000000000000000004000000040400000000040404040404040400000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040000000000000000000005000004240400000000040000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040420000000000000000005000004240400000000040000040404040404040404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040424200000000000000004000424240400000000040000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040404061616140404040404040404040400000000040404040404040000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040000000000000000000000000004240406161611540000000000000000000404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040000000000000000000000000424242000000000040000000404040404040404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040424200000000000000000000004242420000000040000000000000000042404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4000000000000000000000000000004040420000000000000000000000000042424200000040404040404040404242404000000000000000000000000000004040000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
