@@ -26,18 +26,14 @@ function concat(dest, src)
 end
 
 function copy(o, t)
-  local c
   if type(o) == 'table' then
-    if (type(o.clone) == 'function') return o:clone()
-    c={}
-    merge(c, o)
-    if type(t) == 'table' then
-      merge(c, t)
-    end
+    if (o.clone) return o:clone()
+    local c=merge({}, o)
+    if (t) merge(c, t)
+    return c
   else
-    c = o
+    return o
   end
-  return c
 end
 
 vector = {}
@@ -51,8 +47,8 @@ end
 v=vector.new
 vector.zero=v{0,0}
 function vector.__add(a, b)
-  if (type(a) == "number") return v{ a + b.x, a + b.y }
   if (type(b) == "number") return v{ b + a.x, b + a.y }
+  if (type(a) == "number") return b+a
   return v{ a.x + b.x, a.y + b.y }
 end
 function vector.__sub(a, b)
@@ -61,8 +57,8 @@ function vector.__sub(a, b)
 end
 -- scalar or cross product
 function vector.__mul(a, b)
-  if (type(a) == "number") return v{ a * b.x, a * b.y }
   if (type(b) == "number") return v{ a.x * b, a.y * b }
+  if (type(a) == "number") return b*a
   return a.x * b.x + a.y * b.y
 end
 function vector.__eq(a, b)
@@ -107,28 +103,13 @@ end
 function vector:about_face()
   return id_to_dir[(self.id+1)%4+1]
 end
-function vector:dset(idx)
-  dset(idx,self.x) dset(idx+1,self.y)
-end
-function vector.dget(idx)
-  return v{dget(idx),dget(idx+1)}
-end
-
-function sample(arr)
-  return arr[flr(rnd(#arr))+1]
-end
-function filter(arr, fn)
-  local ret={}
-  for x in all(arr) do
-    if (fn(x)) add(ret, x)
+if allow_devmode then
+  function vector:dset(idx)
+    dset(idx,self.x) dset(idx+1,self.y)
   end
-  return ret
-end
-function contains(arr, v)
-  for x in all(arr) do
-    if (x == v) return true
+  function vector.dget(idx)
+    return v{dget(idx),dget(idx+1)}
   end
-  return false
 end
 
 object={
@@ -680,24 +661,19 @@ robotclass=component:copy({
   delete=function(self)
     notimplemented()
   end,
+  bumper_offset={v{0,-5},v{-5,0},v{0,4},v{4,0}},
+  thruster_offset={{v{0,-4},-.25},{v{-4,0},0},{v{0,4},.25},{v{4,0},.5}},
   update=function(self)
     if (player.pos:overlap(self.room_coords+v{16,108},self.room_coords+v{20,112})) player:teleport(self.player_pos)
     if (player.holding == self) self.switch.powered=false
-    local b=self.bumpers
-    if b[1] then
-      b[1].powered=not world:walkable(self, self.pos+v{0,-5})
-      b[2].powered=not world:walkable(self, self.pos+v{-5,0})
-      b[3].powered=not world:walkable(self, self.pos+v{0,4})
-      b[4].powered=not world:walkable(self, self.pos+v{4,0})
+    for i=1,4 do
+      if (self.bumpers[i]) self.bumpers[i].powered=not world:walkable(self, self.pos+self.bumper_offset[i])
     end
     if self:active() then
-      local t=self.thrusters
-      if t[1] then
+      for i=1,4 do
+        local offs=self.thruster_offset[i]
         local ang=rnd(.3)+.35
-        if (t[1].powered) self:move(south*.5) add(self.smoke,{x=self.pos.x,y=self.pos.y-4,dx=cos(ang-.25),dy=sin(ang-.25),ticks=6})
-        if (t[2].powered) self:move(east*.5) add(self.smoke,{x=self.pos.x-4,y=self.pos.y,dx=cos(ang),dy=sin(ang),ticks=6})
-        if (t[3].powered) self:move(north*.5) add(self.smoke,{x=self.pos.x,y=self.pos.y+4,dx=cos(ang+.25),dy=sin(ang+.25),ticks=6})
-        if (t[4].powered) self:move(west*.5) add(self.smoke,{x=self.pos.x+4,y=self.pos.y,dx=cos(ang+.5),dy=sin(ang+.5),ticks=6})
+        if (self.thrusters[i] and self.thrusters[i].powered) self:move(id_to_dir[i]:about_face()*.5) add(self.smoke,merge(self.pos+offs[1], {dx=cos(ang+offs[2]),dy=sin(ang+offs[2]),ticks=6}))
       end
 
       for a in all(self.room.actors) do
