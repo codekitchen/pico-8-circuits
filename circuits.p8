@@ -234,6 +234,7 @@ connection=object:copy({
     return self._pos + self.owner.pos
   end,
   draw=function(self)
+    if (self.hidden) return
     local drawpos=self:basepos()+self.offs[self.facing.id]
     local dspr=self.spr+(self.facing.horiz and 2 or 0)
     if (self.powered) pal(wire_color, powered_color)
@@ -244,7 +245,7 @@ connection=object:copy({
     pal()
   end,
   can_solder=function(self)
-    return not self.locked and self.conn == nil
+    return not self.locked and self.conn == nil and not self.hidden
   end,
 })
 input=connection:copy({
@@ -311,7 +312,7 @@ component=actor:copy({
     self.c=self.connections[1]
     if (self.coffs) self.c._pos+=self.coffs
     if (self.cfacing) self.c.facing=self.cfacing
-    if (not self.cshow) self.c.spr=0
+    if (not self.cshow) self.c.hidden=true
   end,
   draw=function(self)
     foreach(self.connections, function(c) c:draw() end)
