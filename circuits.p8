@@ -1149,7 +1149,7 @@ end
 
 function init_savedata()
   cartdata("codekitchen_circuits_v1")
-  menuitem(5, "reset progress", function()
+  menuitem(5, "reset progress \130", function()
     for a in all(all_actors) do
       if (a.reset_progress) a:reset_progress()
     end
@@ -1192,7 +1192,7 @@ end
 function set_devmode()
   if (not allow_devmode) return
   devmode=peek(cartdata_base)>0
-  menuitem(4, "devmode"..(devmode and " \x82" or ''), function() poke(cartdata_base, devmode and 0 or 1) set_devmode() end)
+  menuitem(4, "devmode is "..(devmode and "on" or "off"), function() poke(cartdata_base, devmode and 0 or 1) set_devmode() end)
 end
 
 function dbg(str)
