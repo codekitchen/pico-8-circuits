@@ -13,12 +13,11 @@ layer = {
   max = 4,
 }
 
-s1=[[ strings! ]]
-
 function merge(dest, src)
-  for k, v in pairs(src) do
+  for k, v in pairs(src or {}) do
     dest[k] = copy(v)
   end
+  return dest
 end
 function concat(dest, src)
   for i=1,#src do
@@ -98,6 +97,7 @@ west  = v{ -1,  0, id=2, horiz=true }
 south = v{  0,  1, id=3 }
 east  = v{  1,  0, id=4, horiz=true }
 id_to_dir={north, west, south, east}
+dirs={north=north,west=west,south=south,east=east}
 function vector:turn_left()
   return id_to_dir[(self.id%4)+1]
 end
@@ -344,7 +344,8 @@ component=actor:copy({
     for c in all(self.connections) do simulation:disconnect(c) end
   end,
 })
-splitter=component:copy({
+types={}
+types.splitter=component:copy({
   movable=true,
   spr=0,
   connections={i(0,0),o(0,4,{facing=south}),o(0,2)},
@@ -354,7 +355,7 @@ splitter=component:copy({
     self.connections[3].powered=self.powered
   end,
 })
-and_=component:copy({
+types.and_=component:copy({
   movable=true,
   spr=17,
   h=2,
@@ -364,7 +365,7 @@ and_=component:copy({
     self.connections[3].powered=self.powered
   end,
 })
-or_=component:copy({
+types.or_=component:copy({
   movable=true,
   spr=18,
   h=2,
@@ -374,7 +375,7 @@ or_=component:copy({
     self.connections[3].powered=self.powered
   end,
 })
-not_=component:copy({
+types.not_=component:copy({
   movable=true,
   spr=16,
   h=2,
@@ -384,7 +385,7 @@ not_=component:copy({
     self.connections[2].powered=self.powered
   end,
 })
-switch=component:copy({
+types.switch=component:copy({
   spr=48,
   connections={o(-1,-3)},
   tick=function(self)
@@ -396,20 +397,20 @@ switch=component:copy({
     self.spr=self.powered and 49 or 48
   end,
 })
-empty_input=component:copy({
+types.empty_input=component:copy({
   connections={i(0,0)},
   tick=function(self)
     self.powered=self.c.powered
   end,
 })
-empty_output=component:copy({
+types.empty_output=component:copy({
   connections={o(0,0)},
   cfacing=north,
   tick=function(self)
     self.c.powered=self.powered
   end,
 })
-timed=component:copy({
+types.timed=component:copy({
   connections={o(0,0)},
   timing={1,1},
   ticks=1,
@@ -452,7 +453,7 @@ doorbase=component:copy({
     end
   end,
 })
-door=doorbase:copy({
+types.door=doorbase:copy({
   connections={i(0,0)},
   tick=function(self)
     self.powered=self.c.powered
@@ -460,7 +461,7 @@ door=doorbase:copy({
   end,
 })
 key_colors={2,3,12,8,10}
-keydoor=doorbase:copy({
+types.keydoor=doorbase:copy({
   spr=21,
   w=1.2,
   h=1.2,
@@ -497,7 +498,7 @@ keydoor=doorbase:copy({
     pal()
   end,
 })
-key=component:copy({
+types.key=component:copy({
   key=true,
   movable=true,
   spr=5,
@@ -507,7 +508,7 @@ key=component:copy({
     pal()
   end,
 })
-toggle=component:copy({
+types.toggle=component:copy({
   movable=true,
   connections={i(-5,1),i(4,3),o(-5,-4),o(4,-2)},
   spr=19,
@@ -525,25 +526,7 @@ toggle=component:copy({
     rectfill(pos.x, pos.y, pos.x+4, pos.y+3, 9)
   end,
 })
-text_toggle=component:copy({
-  connections={i(0,0)},
-  text="",
-  color=7,
-  tick=function(self)
-    self.powered=self.c.powered
-  end,
-  draw=function(self)
-    component.draw(self)
-    local textsize=#self.text*4-1
-    local pos=self.pos
-    rect(pos.x-textsize/2,pos.y-8,pos.x+textsize/2+3,pos.y, self.color)
-    if self.powered then
-      print(self.text, pos.x-textsize/2+2, pos.y-6, self.color)
-    end
-  end,
-})
-
-button=component:copy({
+types.button=component:copy({
   connections={o(4,-3,{facing=south})},
   pressed=0,
   reset=-1,
@@ -569,7 +552,7 @@ button=component:copy({
     self:setspr()
   end,
 })
-robot_spawner=component:copy({
+types.robot_spawner=component:copy({
   connections={i(-8,0)},
   robot_id=1,
   tick=function(self)
@@ -591,21 +574,21 @@ bumper_color=7
 robot_room_coords=v{0,512}
 robots={}
 robot_components={
-  {toggle,98,84},
-  {toggle,100,100},
-  {or_,89,27},
-  {and_,97,27},
-  {and_,105,27},
-  {not_,86,44},
-  {not_,94,44},
-  {or_,102,44},
-  {splitter,20,20},
-  {splitter,26,22},
-  {splitter,32,20},
-  {splitter,38,22},
-  {and_,26,42},
-  {and_,34,44},
-  {or_,42,42},
+  'toggle/98/84',
+  'toggle/100/100',
+  'or_/89/27',
+  'and_/97/27',
+  'and_/105/27',
+  'not_/86/44',
+  'not_/94/44',
+  'or_/102/44',
+  'splitter/20/20',
+  'splitter/26/22',
+  'splitter/32/20',
+  'splitter/38/22',
+  'and_/26/42',
+  'and_/34/44',
+  'or_/42/42',
 }
 robot_components_by_id={
   {1},
@@ -639,24 +622,24 @@ robotclass=component:copy({
     add(robots,self)
     self.room_coords=robot_room_coords+v{self.id * 128, 0}
     local actors={
-      {switch,19,95},
+      'switch/19/95',
       -- always-on outputs
-      {empty_output,82,112,{powered=true}},
-      {empty_output,88,112,{powered=true}},
-      {empty_output,94,112,{powered=true}},
+      'empty_output/82/112/powered=true',
+      'empty_output/88/112/powered=true',
+      'empty_output/94/112/powered=true',
       -- thrusters
-      {empty_input,76,16,{cfacing=south}},
-      {empty_input,16,51,{cfacing=east}},
-      {empty_input,51,111,{cfacing=north}},
-      {empty_input,111,76,{cfacing=west}},
+      'empty_input/76/16/cfacing=south',
+      'empty_input/16/51/cfacing=east',
+      'empty_input/51/111/cfacing=north',
+      'empty_input/111/76/cfacing=west',
     }
     if self.id>0 then
       concat(actors,{
         -- bumpers
-        {empty_output,60,8,{cfacing=south}},
-        {empty_output,8,67,{cfacing=east}},
-        {empty_output,67,119,{cfacing=north}},
-        {empty_output,119,60,{cfacing=west}},
+        'empty_output/60/8/cfacing=south',
+        'empty_output/8/67/cfacing=east',
+        'empty_output/67/119/cfacing=north',
+        'empty_output/119/60/cfacing=west',
       })
     end
     local cids=robot_components_by_id[self.id]
@@ -788,6 +771,40 @@ simulation={
   end,
 }
 
+function split(str,sep,parse,start)
+  start=start or 1
+  local l=#str+1
+  for i=start,#str do
+    if (sub(str,i,i)==sep) l=i break
+  end
+  local ss=sub(str,start,l-1)
+  if (ss=='') return nil
+  if (parse) ss=parse_val(ss)
+  if (l>#str) return ss
+  return ss, split(str,sep,parse,l+1)
+end
+function isnum(c) return c >= '0' and c <= '9' end
+function parse_actor(str)
+  local parts={split(str,'/')}
+  local opts={}
+  for i=4,#parts do
+    local k,v=split(parts[i],'=')
+    opts[k]=parse_val(v)
+  end
+  return {types[parts[1]],parts[2]+0,parts[3]+0,opts}
+end
+function parse_int(str) return str+0 end
+function parse_val(val)
+  if (dirs[val]) return dirs[val]
+  local f=sub(val,1,1)
+  if (isnum(f)) return val+0
+  if (f=='t') return true
+  if (f=='f') return false
+  if (f=='{') return {split(val,',',true,2)}
+  if (f=='v') return v{split(val,',',true,3)}
+  return val
+end
+
 roomsidx={{},{},{},{},{},{}}
 rooms={}
 room=object:copy({
@@ -804,7 +821,8 @@ room=object:copy({
     local actors=self.actors
     self.actors={}
     for x in all(actors) do
-      local a=x[1]:new(v{x[2]+roomcoords.x,x[3]+roomcoords.y},x[4])
+      x=parse_actor(x)
+      x[1]:new(v{x[2]+roomcoords.x,x[3]+roomcoords.y},x[4])
       -- actor will add itself
     end
     for w in all(self.wires) do
@@ -818,40 +836,46 @@ getroom=function(v)
   -- probably only useful in dev mode?
   return room:new(v.x, v.y, {})
 end
+function parse_room(str,opts)
+  local coords,actors,wires=split(str,'|')
+  local x,y=split(coords,',',true)
+  room:new(x,y,merge({
+    actors={split(actors,'\n')},
+    wires={split(wires,'\n',true)},
+  },opts))
+end
 function init_world()
-robotclass:new(v{0,0},{id=0})
-robotclass:new(v{0,0},{id=1})
-robotclass:new(v{0,0},{id=2})
-room:new(1,0,{
-  actors={
-    {button,10,68,{cshow=false,flipx=true,reset=2}},
-    {door,60,51,{doorway={1,0,5,0},cfacing=west,walltile=72}},
-    {button,18,108,{cshow=false,flipx=true,reset=2}},
-    {robot_spawner,16,96,{cfacing=west,robot_id=0,coffs=v{-2,0}}},
-  },
-  wires={{1,1,2,1},{4,1,3,1}},
+parse_room([[1,0
+|button/10/68/cshow=false/flipx=true/reset=2
+door/60/51/doorway={1,0,5,0/cfacing=west/walltile=72
+button/18/108/cshow=false/flipx=true/reset=2
+robot_spawner/16/96/cfacing=west/robot_id=0/coffs=v{-2,0
+|{1,1,2,1
+{4,1,3,1
+]],{
   text={
-    {12,13,"hi, robot!\n\ncarry the robot with z\nclimb inside with x\nand you can rewire it!"},
-  },
+    {12,13,"hi, robot!\n\ncarry the robot with z\nclimb inside with x\nand you can rewire it!"}
+  }
 })
-room:new(1,1,{
-  actors={
-    {door,20,84,{cfacing=south,coffs=v{0,3},doorway={1,0,3,0}}},
-    {button,10,116,{flipx=true,reset=5,cfacing=east,coffs=v{2,-5}}},
-    {door,88,52,{facing=south,cfacing=west,doorway={0,1,0,2}}},
-    {button,10,76,{flipx=true,cfacing=east,coffs=v{2,-5}}},
-    {button,18,28,{cshow=false,flipx=true,reset=2}},
-    {robot_spawner,16,16,{cfacing=west,robot_id=0,coffs=v{-2,0}}},
-    {button,118,16,{cfacing=south,cshow=false}},
-    {door,60,44,{doorway={0,-4,0,-1},facing=north,cfacing=south,coffs=v{0,-3}}},
-    {key,113,73,{id=1}},
-    {keydoor,20,44,{id=1,doorway={1,0,3,0}}},
-  },
-  wires={{2,1,1,1},{6,1,5,1},{7,1,8,1}},
+parse_room([[1,1
+|door/20/84/cfacing=south/coffs=v{0,3/doorway={1,0,3,0
+button/10/116/flipx=true/reset=5/cfacing=east/coffs=v{2,-5
+door/88/52/facing=south/cfacing=west/doorway={0,1,0,2
+button/10/76/flipx=true/cfacing=east/coffs=v{2,-5
+button/18/28/cshow=false/flipx=true/reset=2
+robot_spawner/16/16/cfacing=west/robot_id=0/coffs=v{-2,0
+button/118/16/cfacing=south/cshow=false
+door/60/44/doorway={0,-4,0,-1/facing=north/cfacing=south/coffs=v{0,-3
+key/113/73/id=1
+keydoor/20/44/id=1/doorway={1,0,3,0
+|{2,1,1,1
+{6,1,5,1
+{7,1,8,1
+]],{
   text={
     {20,113,"\139press button with z"},
-    {20,66,"\139solder wires\n   with x",true},
-    {74,26,"carry items\n   with z\131",true},
+    {20,66,"\139solder wires\nwith x",true},
+    {74,26,"carry items\nwith z\131",true}
   },
   update=function(self)
     self.actors[1].c.locked=true
@@ -860,64 +884,63 @@ room:new(1,1,{
       self.text[2][4]=nil
       if (player:roompos().x>96) self.text[3][4]=nil
     end
-  end,
+  end
 })
-room:new(2,0,{
-  actors={
-    {button,118,20,{cfacing=south,coffs=v{-6,14},reset=3}},
-    {door,92,52,{doorway={1,1,3,1},cfacing=east,coffs=v{3,0}}},
-    {button,10,116,{flipx=true,cfacing=east,coffs=v{2,-5},reset=3}},
-    {door,60,80,{doorway={1,0,3,0},cfacing=north}},
-    {toggle,54,24},
-    {key,56,112,{id=2}},
-  },
-  wires={{1,1,2,1},{3,1,4,1}},
+parse_room([[2,0
+|button/118/20/cfacing=south/coffs=v{-6,14/reset=3
+door/92/52/doorway={1,1,3,1/cfacing=east/coffs=v{3,0
+button/10/116/flipx=true/cfacing=east/coffs=v{2,-5/reset=3
+door/60/80/doorway={1,0,3,0/cfacing=north
+toggle/54/24
+key/56/112/id=2
+|{1,1,2,1
+{3,1,4,1
+]],{
   text={
     {12,52,"toggle switch\x94\ncan be carried\nand rewired"},
     {30,91,"  outputs retain power\n  until the other line\n            is powered"},
-  },
+  }
 })
-room:new(2,1,{
-  actors={
-    {keydoor,36,92,{id=2,doorway={-3,0,-1,0}}},
-    {button,18,28,{cshow=false,flipx=true,reset=2}},
-    {robot_spawner,16,16,{cfacing=west,robot_id=1,coffs=v{-2,0}}},
-    {button,118,112,{cfacing=south,cshow=false}},
-    {door,100,68,{doorway={0,-2,0,-1},cfacing=south,coffs=v{0,-3},walltile=87}},
-    {key,112,56,{id=3}},
-    {keydoor,124,36,{id=3,doorway={0,-3,1,-1},facing=north}},
-  },
-  wires={{3,1,2,1},{4,1,5,1}},
+parse_room([[2,1
+|keydoor/36/92/id=2/doorway={-3,0,-1,0
+button/18/28/cshow=false/flipx=true/reset=2
+robot_spawner/16/16/cfacing=west/robot_id=1/coffs=v{-2,0
+button/118/112/cfacing=south/cshow=false
+door/100/68/doorway={0,-2,0,-1/walltile=87/coffs=v{0,-3
+key/112/56/id=3
+keydoor/124/36/id=3/doorway={0,-3,1,-1/facing=north
+|{3,1,2,1
+{4,1,5,1
+]],{
   text={
     {30,12," robot bumpers are\n     powered while\n   touching a wall\n\nwire bumpers\nto thrusters to\nchange direction",true}
   },
   update=function(self)
     if (not self.actors[7].powered and player:roompos().y<84) self.text[1][4]=nil
-  end,
+  end
 })
-room:new(3,0,{
-  actors={
-    {button,110,116,{reset=2,cshow=false}},
-    {robot_spawner,112,104,{cfacing=east,robot_id=2,coffs=v{17,0}}},
-    {button,54,28,{cshow=false,cfacing=south,reset=2}},
-    {splitter,10,14},
-    {door,22,92,{doorway={1,0,3,0},cfacing=west}},
-  },
-  wires={{2,1,1,1},{3,1,4,1},{4,3,5,1}},
-})
-room:new(3,1,{
-  actors={
-    {keydoor,116,92,{id=4,doorway={-6,0,-1,0}}},
-    {keydoor,60,116,{id=5,doorway={0,-2,0,-1},facing=north}},
-    {and_,86,22},
-    {or_,86,46},
-    {not_,86,70},
-    {timed,22,88,{timing={5,5}}},
-    {timed,30,88,{timing={5,5},powered=true}},
-    {timed,38,88,{timing={5,5}}},
-    {timed,46,88,{timing={5,5},powered=true}},
-  },
-  wires={},
+parse_room[[3,0
+|button/110/116/reset=2/cshow=false
+robot_spawner/112/104/cfacing=east/robot_id=2/coffs=v{17,0
+button/54/28/cshow=false/cfacing=south/reset=2
+splitter/10/14
+door/22/92/doorway={1,0,3,0/cfacing=west
+|{2,1,1,1
+{3,1,4,1
+{4,3,5,1
+]]
+parse_room([[3,1
+|keydoor/116/92/id=4/doorway={-6,0,-1,0
+keydoor/60/116/id=5/doorway={0,-2,0,-1/facing=north
+and_/86/22
+or_/86/46
+not_/86/70
+timed/22/88/timing={5,5
+timed/30/88/timing={5,5/powered=true
+timed/38/88/timing={5,5
+timed/46/88/timing={5,5/powered=true
+|
+]],{
   text={
     {97,17,"'and'\ngate"},
     {97,41,"'or'\ngate"},
@@ -929,26 +952,25 @@ room:new(3,1,{
 room:new(3,2,{
   text={{20,40,"under construction \130"}},
 })
-room:new(4,0,{
-  actors={
-    {button,10,12,{reset=2,cshow=false,flipx=true}},
-    {robot_spawner,24,16,{robot_id=3,cfacing=north,coffs=v{7,-10}}},
-    {button,118,116,{cshow=false}},
-    {splitter,124,4},
-    {door,36,6,{doorway={0,1,0,3},cfacing=north,facing=north}},
-  },
-  wires={{1,1,2,1},{4,1,3,1},{4,2,5,1}},
-})
-room:new(4,1,{
-  actors={
-    {button,110,68,{reset=2,cshow=false}},
-    {robot_spawner,112,56,{robot_id=4,coffs=v{17,0},cfacing=east}},
-    {button,26,68,{flipx=true,cshow=false}},
-    {door,59,94,{doorway={0,1,0,3},walltile=87,cfacing=north}},
-    {key,16,112,{id=4}},
-  },
-  wires={{2,1,1,1},{3,1,4,1}},
-})
+parse_room[[4,0
+|button/10/12/reset=2/cshow=false/flipx=true
+robot_spawner/24/16/robot_id=3/cfacing=north/coffs=v{7,-10
+button/118/116/cshow=false
+splitter/124/4
+door/36/6/doorway={0,1,0,3/cfacing=north/facing=north
+|{1,1,2,1
+{4,1,3,1
+{4,2,5,1
+]]
+parse_room[[4,1
+|button/110/68/reset=2/cshow=false
+robot_spawner/112/56/robot_id=4/coffs=v{17,0/cfacing=east
+button/26/68/flipx=true/cshow=false
+door/59/94/doorway={0,1,0,3/walltile=87/cfacing=north
+key/16/112/id=4
+|{2,1,1,1
+{3,1,4,1
+]]
 room:new(4,2,{
   text={{20,40,"under construction \130"}},
 })
