@@ -14,5 +14,3 @@
   * Hold:
   * Hold When Holding:
   * Hold When Soldering:
-
-- make thruster/booster graphics more clear
