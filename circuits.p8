@@ -667,12 +667,8 @@ robotclass=component:copy({
   end,
   spawned=function(self,pos)
     self.pos=pos
-    self.switch.powered=false
     self:setroom()
     for a in all(self.actors) do a:reset() end
-    if self.id < 2 then
-      self.switch.powered=true
-    end
   end,
   initialize=function(self,...)
     component.initialize(self,...)
@@ -752,6 +748,7 @@ robotclass=component:copy({
       self.bumpers[i]=self.actors[i+8]
     end
     self.switch=self.actors[1]
+    self.switch.powered=true
   end,
   delete=function(self)
     notimplemented()
@@ -760,7 +757,6 @@ robotclass=component:copy({
   thruster_offset={{v{0,-4},-.25},{v{-4,0},0},{v{0,4},.25},{v{4,0},.5}},
   update=function(self)
     if (player.pos:overlap(self.room_coords+v{16,108},self.room_coords+v{20,112})) player:teleport(self.player_pos)
-    if (player.holding == self) self.switch.powered=false
     for i,b in pairs(self.bumpers) do
       local bumped=b.powered
       b.powered=not world:walkable(self, self.pos+self.bumper_offset[i])
@@ -788,7 +784,7 @@ robotclass=component:copy({
     end
   end,
   active=function(self)
-    return not player.room.robot and self.switch.powered 
+    return not player.room.robot and self.switch.powered and player.holding != self
   end,
   interact_with=function(self,other)
     other:interact(self)
@@ -801,7 +797,7 @@ robotclass=component:copy({
       local color=s.ticks>2 and 7 or 10
       pset(s.x, s.y, color)
     end
-    if (self:active()) pal(5,10)
+    if (self.switch.powered) pal(5,10)
     component.draw(self)
     pal()
     self.draw_bumper(self.bumpers[1],pos.x-2,pos.y-5,pos.x+1,pos.y-5)
