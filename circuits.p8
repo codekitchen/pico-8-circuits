@@ -377,6 +377,7 @@ types.switch=component:copy({
     self.spr=self.powered and 49 or 48
   end,
   interact=function(self)
+    sfx(3)
     self.powered=not self.powered
     self.spr=self.powered and 49 or 48
   end,
@@ -645,7 +646,7 @@ robotclass=component:copy({
     add(robots,self)
     self.room_coords=robot_room_coords+v{self.id * 128, 0}
     local actors={
-      'switch/19/95',
+      'switch/19/95/cshow=false',
       -- always-on outputs
       'empty_output/82/112/powered=true',
       'empty_output/88/112/powered=true',
@@ -679,7 +680,6 @@ robotclass=component:copy({
       self.bumpers[i]=self.actors[i+8]
     end
     self.switch=self.actors[1]
-    self.switch.c.spr=0
     if self.id == 0 then
       simulation:connect(self.actors[2],self.thrusters[2])
       self.text={
