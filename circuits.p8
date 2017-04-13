@@ -302,6 +302,7 @@ wire=actor:copy({
 })
 component=actor:copy({
   spr=0,
+  blocked_flag=7,
   connections={},
   powered=false,
   facing=south,
@@ -522,6 +523,7 @@ types.key=component:copy({
   key=true,
   movable=true,
   spr=5,
+  blocked_flag=0,
   draw=function(self)
     pal(8, key_colors[self.id])
     component.draw(self)
@@ -621,7 +623,6 @@ robot_components_by_id[0]={}
 robotclass=component:copy({
   movable=true,
   robot=true,
-  blocked_flag=7,
   spr=10,
   bumpers={},
   thrusters={},
@@ -921,7 +922,7 @@ relay/7/68/facing=east
 })
 parse_room([[2,0
 |button/118/20/reset=2
-energydoor/92/60/doorway={1,0,3,0/facing=east/cfacing=north/coffs=v{1,-4
+energydoor/92/60/doorway={1,0,3,0/facing=east/cfacing=north/coffs=v{1,-4/opentile=81
 button/10/116/flipx=true/reset=2
 energydoor/60/84/doorway={1,0,3,0/facing=east/cfacing=north/coffs=v{1,-4
 toggle/54/24
@@ -1032,7 +1033,7 @@ world={
       pos.y = pos.y % 128
     end
     local tile=self:tile_at(pos)
-    return not fget(tile, actor.blocked_flag or 0)
+    return not fget(tile, actor.blocked_flag)
   end,
   switch_rooms=function(self, newroom)
     current_room=newroom
