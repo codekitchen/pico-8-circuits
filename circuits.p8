@@ -554,6 +554,7 @@ types.button=component:copy({
   pressed=0,
   reset=-1,
   cshow=false,
+  color=11,
   initialize=function(self,...)
     component.initialize(self,...)
     if (self.flipx) self.c._pos-=v({9,0})
@@ -571,11 +572,17 @@ types.button=component:copy({
     self.c.powered=self.powered
     self:setspr()
   end,
-  interact=function(self)
+  interact=function(self,other)
+    if (self.norobot and other.robot) return
     if (self.pressed==0) sfx(3)
     self.pressed=self.reset
     self:setspr()
   end,
+  draw=function(self)
+    pal(11,self.color)
+    component.draw(self)
+    pal()
+  end
 })
 types.robot_spawner=component:copy({
   connections={i(-8,0)},
@@ -877,7 +884,7 @@ function init_world()
 parse_room([[1,0
 |button/10/68/cshow=false/flipx=true/reset=2
 door/60/51/doorway={1,0,5,0/cfacing=west/walltile=72
-button/18/108/cshow=false/flipx=true/reset=2
+button/18/108/cshow=false/flipx=true/reset=2/color=6/norobot=true
 robot_spawner/16/96/cfacing=west/robot_id=0/coffs=v{-2,0
 energydoor/60/84/doorway={0,-3,0,-1/facing=north/cshow=false
 |{1,1,2,1
@@ -892,7 +899,7 @@ parse_room([[1,1
 button/10/116/flipx=true/reset=5
 energydoor/92/52/facing=south/cfacing=west/doorway={0,1,0,2/coffs=v{-4,1
 button/10/76/flipx=true
-button/18/28/cshow=false/flipx=true/reset=2
+button/18/28/cshow=false/flipx=true/reset=2/color=6/norobot=true
 robot_spawner/16/16/cfacing=west/robot_id=0/coffs=v{-2,0
 button/118/16/cfacing=south/cshow=false
 energydoor/60/44/doorway={0,-4,0,-1/facing=north/cfacing=east/coffs=v{3,-2
@@ -941,7 +948,7 @@ relay/7/108/facing=east
 })
 parse_room([[2,1
 |keydoor/36/92/id=2/doorway={-3,0,-1,0
-button/18/28/cshow=false/flipx=true/reset=2
+button/18/28/cshow=false/flipx=true/reset=2/color=6/norobot=true
 robot_spawner/16/16/cfacing=west/robot_id=1/coffs=v{-2,0
 button/118/112/cfacing=south/cshow=false
 door/100/68/doorway={0,-2,0,-1/facing=north/coffs=v{0,-3
@@ -960,7 +967,7 @@ energydoor/60/68/doorway={1,0,2,0/facing=east/cshow=false
   end
 })
 parse_room[[3,0
-|button/110/116/reset=2/cshow=false
+|button/110/116/reset=2/cshow=false/color=6/norobot=true
 robot_spawner/112/104/cfacing=east/robot_id=2/coffs=v{17,0
 button/54/28/cshow=false/cfacing=south/reset=2
 splitter/10/14
@@ -993,7 +1000,7 @@ room:new(3,2,{
   text={{20,40,"under construction \130"}},
 })
 parse_room[[4,0
-|button/10/12/reset=2/cshow=false/flipx=true
+|button/10/12/reset=2/cshow=false/flipx=true/color=6/norobot=true
 robot_spawner/24/16/robot_id=3/cfacing=north/coffs=v{7,-10
 button/118/116/cshow=false
 splitter/124/4
@@ -1003,7 +1010,7 @@ energydoor/36/4/doorway={0,1,0,3/cfacing=north/facing=south
 {4,2,5,1
 ]]
 parse_room[[4,1
-|button/110/68/reset=2/cshow=false
+|button/110/68/reset=2/cshow=false/color=6/norobot=true
 robot_spawner/112/56/robot_id=4/coffs=v{17,0/cfacing=east
 button/26/68/flipx=true/cshow=false
 door/59/94/doorway={0,1,0,3/cfacing=north/facing=south
