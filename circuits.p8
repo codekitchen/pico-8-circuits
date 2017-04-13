@@ -1030,22 +1030,32 @@ energydoor/20/92/doorway={1,0,3,0/cfacing=west/facing=east
 parse_room([[3,1
 |keydoor/116/92/id=4/doorway={-6,0,-1,0
 keydoor/60/116/id=5/doorway={0,-2,0,-1/facing=north
-and_/86/22
-or_/86/46
-not_/86/70
+and_/86/24
+or_/86/48
+not_/86/72
 timed/22/88/timing={5,5
 timed/30/88/timing={5,5/powered=true
 timed/38/88/timing={5,5
 timed/46/88/timing={5,5/powered=true
+door/84/8/doorway={-2,-2,-1,0/facing=west/cfacing=south/coffs=v{-2,-1
 |
 ]],{
   text={
-    {97,17,"'and'\ngate"},
-    {97,41,"'or'\ngate"},
-    {97,65,"'not'\ngate"},
-    {16,14,"logic gates\noutput power\nbased on\ntheir inputs\n\ntry them out\n     \x83"},
+    {97,19,"\"and\"\ngate"},
+    {97,43,"\"or\"\ngate"},
+    {97,67,"\"not\"\ngate"},
+    {16,14,"logic gates\noutput power\nbased on\ntheir inputs\n\npick up a gate\nfor more info"},
+    {16,14,"and gates are\npowered when\nboth inputs\nare powered\n\ntry it out",true},
+    {16,14,"or gates are\npowered when\neither input\nis powered\n\ntry it out",true},
+    {16,14,"not gates are\npowered when\nthe input is\nnot powered\n\ntry it out",true},
     {67,113,"hold z to run"},
   },
+  update=function(self)
+    self.text[5][4]=player.holding != self.actors[3]
+    self.text[6][4]=player.holding != self.actors[4]
+    self.text[7][4]=player.holding != self.actors[5]
+    self.text[4][4]=player.holding != nil
+  end
 })
 room:new(3,2,{
   text={{20,40,"under construction \130"}},
