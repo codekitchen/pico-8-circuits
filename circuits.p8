@@ -650,7 +650,11 @@ robotclass=component:copy({
   smoke={},
   action2=function(self)
     self.player_pos=player.pos
+    player.last_robot=self
     player:teleport(self.room_coords+v{26,108})
+  end,
+  view=function(self)
+    world:view_room(self.robot_room)
   end,
   spawned=function(self,pos)
     self.pos=pos
@@ -698,17 +702,17 @@ robotclass=component:copy({
         {24,84,"power"},
         {30,106,"exit"},
         {26,44,"thrust"},
-        {80,24,"thrust"},
-        {88,68,"thrust"},
-        {55,98,"thrust"},
+        {84,24,"thrust"},
+        {88,64,"thrust"},
+        {58,98,"thrust"},
       }
       concat(actors,{
         'arrow/17/81/facing=south/text=1',
         'arrow/24/106/facing=west/text=2',
         'arrow/20/44/facing=west/text=3',
-        'arrow/74/24/facing=north/text=4',
-        'arrow/95/74/facing=east/text=5',
-        'arrow/49/95/facing=south/text=6',
+        'arrow/78/24/facing=north/text=4',
+        'arrow/95/70/facing=east/text=5',
+        'arrow/52/95/facing=south/text=6',
       })
       wires={{2,1,6,1}}
     elseif self.id == 1 then
@@ -914,7 +918,7 @@ function parse_room(str,opts)
   },opts))
 end
 function init_world()
-robotclass:new(v{0,0},{id=1})
+robotclass:new(v{0,0},{id=0})
 parse_room([[1,0
 |button/10/68/cshow=false/flipx=true/reset=2
 door/60/51/doorway={1,0,5,0/cfacing=west/walltile=72
@@ -925,8 +929,14 @@ energydoor/60/84/doorway={0,-3,0,-1/facing=north/cshow=false
 {4,1,3,1
 ]],{
   text={
-    {12,13,"hi, robot!\n\ncarry the robot with z\nclimb inside with x\nand you can rewire it!"}
-  }
+    {12,13,"hi, robot!\n\ncarry the robot with z\nclimb inside with x\nand you can rewire it!"},
+    {12,13,"hold z+x to peek inside\nwhile the robot is moving", true},
+  },
+  update=function(self)
+    for a in all(self.actors) do
+      if (player.last_robot == a) self.text[1][4]=true self.text[2][4]=nil
+    end
+  end
 })
 parse_room([[1,1
 |energydoor/20/84/facing=east/cfacing=south/coffs=v{1,3/doorway={1,0,3,0
@@ -1081,9 +1091,24 @@ world={
     current_room=newroom
     roomcoords=current_room.coord*128
   end,
+  -- view a different room without switching to it
+  view_room=function(self, room)
+    self.viewing_room=room
+  end,
   update=function(self)
+    self.viewing_room=nil
+    room_check()
+    update_actors()
     if (connflash > 0) connflash-=1
     if (current_room and current_room.update) current_room:update()
+  end,
+  draw=function(self)
+    local room=current_room
+    if (self.viewing_room) self:switch_rooms(self.viewing_room)
+    camera(roomcoords.x, roomcoords.y)
+    self:draw_room()
+    draw_actors()
+    self:switch_rooms(room)
   end,
   draw_room=function(self)
     local mapcoords=current_room.robot and vector.zero or current_room.coord*16
@@ -1116,13 +1141,13 @@ playerclass=actor:copy({
   update=function(self)
     local oldpos=self.pos
     self.didmove=false
+    if (btn(4)) self.btn4+=1
+    if (btn(5)) self.btn5+=1
+    self:action_check()
     if (btn(0)) self:move(west)
     if (btn(1)) self:move(east)
     if (btn(2)) self:move(north)
     if (btn(3)) self:move(south)
-    if (btn(4)) self.btn4+=1
-    if (btn(5)) self.btn5+=1
-    self:action_check()
     if self.didmove then
       self.swt-=1
       if (self.swt==0) self.sidx=(self.sidx%#self.sprs)+1 self.swt=4
@@ -1130,10 +1155,11 @@ playerclass=actor:copy({
     end
   end,
   move=function(self,dist)
+    if (btn(5)) return
     self.didmove=true
     local speed=1
     local oldpos=self.pos
-    if (self.btn4>3) speed=3 self.did_run=true
+    if (self.btn4>3) speed=3 self.action_held=true
     actor.move(self,dist,speed)
     if self.holding then
       self.holding:move(self.pos-oldpos)
@@ -1149,13 +1175,16 @@ playerclass=actor:copy({
   end,
   action_check=function(self)
     if not btn(4) and self.btn4 > 0 then
-      if (not self.did_run) self:action1()
+      if (not self.action_held) self:action1()
       self.btn4=0
-      self.did_run=false
-    end
-    if not btn(5) and self.btn5 > 0 then
-      self:action2()
+    elseif not btn(5) and self.btn5 > 0 then
+      if (not self.action_held) self:action2()
       self.btn5=0
+    elseif self.btn4 > 2 and self.btn5 > 2 then
+      self.action_held=true
+      if (self.last_robot) self.last_robot:view()
+    else
+      self.action_held=false
     end
   end,
   action1=function(self)
@@ -1270,28 +1299,20 @@ end
 
 function _update()
   tick+=1
-  update_actors()
   world:update()
   if tick%tickframes==0 then
     simulation.tick()
   end
-  room_check()
 end
 
 function room_check()
   if (player.room != current_room) world:switch_rooms(player.room)
 end
 
-function move_cam()
-  camera(roomcoords.x, roomcoords.y)
-end
-
 function _draw()
   cls()
   if (not current_room) return
-  move_cam()
-  world:draw_room()
-  draw_actors()
+  world:draw()
   if (devmode) draw_dbg()
 end
 
