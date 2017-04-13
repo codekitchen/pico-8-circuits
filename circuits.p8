@@ -952,14 +952,11 @@ energydoor/60/68/doorway={1,0,2,0/facing=east/cshow=false
 {4,1,5,1
 ]],{
   text={
-    {30,38,"circuits\nby @codekitchen",true},
+    {30,38,"circuits\nby @codekitchen"},
     {30,12," robot bumpers are\n     powered while\n   touching a wall\n\nwire bumpers\nto thrusters to\nchange direction",true}
   },
   update=function(self)
-    local a=player:roompos().y<84
-    local b=self.actors[7].powered
-    self.text[1][4]=a
-    self.text[2][4]=b or not a
+    if (player:roompos().y<84) self.text[1][4]=true self.text[2][4]=nil
   end
 })
 parse_room[[3,0
