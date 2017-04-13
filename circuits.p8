@@ -131,6 +131,7 @@ actor=object:copy({
     add(all_actors,self)
   end,
   start=function(self) end,
+  reset=function(self) end,
   delete=function(self)
     if (self.room) del(self.room.actors, self)
     del(all_actors,self)
@@ -314,6 +315,7 @@ component=actor:copy({
     foreach(self.connections, function(c) c:add(self) end)
     self.c=self.connections[1]
     self.c2=self.connections[2]
+    self.c3=self.connections[3]
     if (self.coffs) self.c._pos+=self.coffs
     if (self.cfacing) self.c.facing=self.cfacing
     if (not self.cshow) self.c.hidden=true
@@ -346,8 +348,8 @@ types.splitter=component:copy({
   connections={i(0,0),o(0,4,{facing=south}),o(0,2)},
   tick=function(self)
     self.powered=self.c.powered
-    self.connections[2].powered=self.powered
-    self.connections[3].powered=self.powered
+    self.c2.powered=self.powered
+    self.c3.powered=self.powered
   end,
 })
 types.and_=component:copy({
@@ -356,8 +358,8 @@ types.and_=component:copy({
   h=2,
   connections={i(-3,3),i(1,4),o(-1,-4)},
   tick=function(self)
-    self.powered=self.c.powered and self.connections[2].powered
-    self.connections[3].powered=self.powered
+    self.powered=self.c.powered and self.c2.powered
+    self.c3.powered=self.powered
   end,
 })
 types.or_=component:copy({
@@ -366,8 +368,8 @@ types.or_=component:copy({
   h=2,
   connections={i(-3,3),i(1,4),o(-1,-4)},
   tick=function(self)
-    self.powered=self.c.powered or self.connections[2].powered
-    self.connections[3].powered=self.powered
+    self.powered=self.c.powered or self.c2.powered
+    self.c3.powered=self.powered
   end,
 })
 types.not_=component:copy({
@@ -377,7 +379,7 @@ types.not_=component:copy({
   connections={i(-1,3),o(-1,-4)},
   tick=function(self)
     self.powered=self.c.conn and not self.c.powered
-    self.connections[2].powered=self.powered
+    self.c2.powered=self.powered
   end,
 })
 types.switch=component:copy({
@@ -408,6 +410,10 @@ types.empty_input=component:copy({
   connections={i(0,0)},
   tick=function(self)
     self.powered=self.c.powered
+  end,
+  reset=function(self)
+    self.powered=false
+    self.c.powered=false
   end,
 })
 types.empty_output=component:copy({
@@ -550,9 +556,12 @@ types.toggle=component:copy({
   active=1,
   tick=function(self)
     if (self.c.powered) self.active=1
-    if (self.connections[2].powered) self.active=2
-    self.connections[3].powered=self.active==1
+    if (self.c2.powered) self.active=2
+    self.c3.powered=self.active==1
     self.connections[4].powered=self.active==2
+  end,
+  reset=function(self)
+    self.active=1
   end,
   draw=function(self)
     component.draw(self)
@@ -660,6 +669,7 @@ robotclass=component:copy({
     self.pos=pos
     self.switch.powered=false
     self:setroom()
+    for a in all(self.actors) do a:reset() end
     if self.id < 2 then
       self.switch.powered=true
     end
@@ -751,20 +761,17 @@ robotclass=component:copy({
   update=function(self)
     if (player.pos:overlap(self.room_coords+v{16,108},self.room_coords+v{20,112})) player:teleport(self.player_pos)
     if (player.holding == self) self.switch.powered=false
-    for i=1,4 do
-      local b=self.bumpers[i]
-      if b then
-        local bumped=b.powered
-        b.powered=not world:walkable(self, self.pos+self.bumper_offset[i])
-        if (not bumped and b.powered) self.room:sfx(1)
-      end
+    for i,b in pairs(self.bumpers) do
+      local bumped=b.powered
+      b.powered=not world:walkable(self, self.pos+self.bumper_offset[i])
+      if (not bumped and b.powered) self.room:sfx(1)
     end
     if self:active() then
       local moved
-      for i=1,4 do
+      for i,t in pairs(self.thrusters) do  
         local offs=self.thruster_offset[i]
         local ang=rnd(.3)+.35
-        if (self.thrusters[i] and self.thrusters[i].powered) self:move(id_to_dir[i]:about_face()*.5) add(self.smoke,merge(self.pos+offs[1], {dx=cos(ang+offs[2]),dy=sin(ang+offs[2]),ticks=6})) moved=true
+        if (t.powered) self:move(id_to_dir[i]:about_face()*.5) add(self.smoke,merge(self.pos+offs[1], {dx=cos(ang+offs[2]),dy=sin(ang+offs[2]),ticks=6})) moved=true
       end
 
       -- if (moved) self.room:sfx(2)
@@ -997,7 +1004,7 @@ arrow/73/52/facing=north/text=1
 parse_room([[2,1
 |keydoor/36/92/id=2/doorway={-3,0,-1,0
 button/34/52/cshow=false/flipx=true/reset=2/color=6/norobot=true
-robot_spawner/16/16/cfacing=west/robot_id=1/coffs=v{-2,0
+robot_spawner/16/24/cfacing=west/robot_id=1/coffs=v{-2,0
 button/118/112/cfacing=south/cshow=false
 door/100/68/doorway={0,-2,0,-1/facing=north/coffs=v{0,-3
 key/112/56/id=3
