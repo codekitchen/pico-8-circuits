@@ -14,3 +14,5 @@
   * Hold:
   * Hold When Holding:
   * Hold When Soldering:
+* Z+X
+  * Hold: View Inside Robot
