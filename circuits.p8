@@ -745,7 +745,7 @@ robotclass=component:copy({
     self.robot_room.robot=self
     for i=1,4 do
       self.thrusters[i]=self.actors[i+4]
-      self.bumpers[i]=self.actors[i+8]
+      if (self.id>0) self.bumpers[i]=self.actors[i+8]
     end
     self.switch=self.actors[1]
     self.switch.powered=true
