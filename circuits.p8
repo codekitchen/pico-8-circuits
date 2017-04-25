@@ -569,7 +569,7 @@ types.toggle=component:copy({
   end,
 })
 types.button=component:copy({
-  connections={o(4,-3,{facing=south})},
+  connections={o(4,-3,{facing=south,locked=true})},
   pressed=0,
   reset=-1,
   cshow=false,
@@ -912,7 +912,7 @@ function getroom(v)
 end
 function parse_room(str,opts)
   local coords,actors,wires=split(str,'|')
-  flip() -- todo: this is fixing some sort of pico-8 timing bug, need to report
+  flip() -- todo: this is fixing some sort of pico-8 timing bug, or maybe a gc issue, need to investigate/report
   local x,y=split(coords,',',true)
   room:new(x,y,merge({
     actors={split(actors,'\n')},
@@ -920,6 +920,9 @@ function parse_room(str,opts)
   },opts))
 end
 function init_world()
+cls()
+print("loading...", 45, 60)
+flip()
 robotclass:new(v{0,0},{id=0})
 parse_room([[1,0
 |button/10/68/cshow=false/flipx=true/reset=2
@@ -969,7 +972,6 @@ arrow/110/30/facing=south/text=3
   },
   update=function(self)
     self.actors[1].c.locked=true
-    self.actors[11].c2.locked=true
     if player:roompos().y<78 then
       self.text[2][4]=nil
       if (player:roompos().x>96) self.text[3][4]=nil
@@ -1010,7 +1012,7 @@ energydoor/60/68/doorway={1,0,2,0/facing=east/cshow=false
 ]],{
   text={
     {36,16,"circuits\nby @codekitchen"},
-    {24,11," robot bumpers \n detect when robot\n is touching a wall",true}
+    {24,11," robot bumpers detect\n when the robot\n is touching a wall",true}
   },
   update=function(self)
     if (player:roompos().y<84) self.text[1][4]=true self.text[2][4]=nil
@@ -1134,11 +1136,12 @@ world={
   end,
 }
 
-solder_distance=4
+solder_distance=5
 devmode_playerpos=62
 playerclass=actor:copy({
-  spr=41,
+  spr=26,
   sprs={41,42,43,44,45},
+  sprs={26, 27, 28, 29},
   sidx=1,
   swt=4,
   player=true,
@@ -1147,6 +1150,7 @@ playerclass=actor:copy({
   wire_type=1,
   btn4=0,
   btn5=0,
+  solder_offsets={v{-5,0},v{4,0}},
   initialize=function(self,...)
     actor.initialize(self,...)
     if (devmode) self.pos=vector.dget(devmode_playerpos) self:setroom()
@@ -1166,6 +1170,7 @@ playerclass=actor:copy({
       if (self.swt==0) self.sidx=(self.sidx%#self.sprs)+1 self.swt=4
       self.spr=self.sprs[self.sidx]
     end
+    self.solder_pos=self.pos+self.solder_offsets[self.flipx and 2 or 1]
   end,
   move=function(self,dist)
     if (btn(5)) return
@@ -1179,7 +1184,7 @@ playerclass=actor:copy({
       if (not self:touching(self.holding)) self:drop()
     end
     self.pos:dset(devmode_playerpos)
-    if (dist.horiz) self.flipx=dist==west
+    if (dist.horiz) self.flipx=dist==east
   end,
   teleport=function(self,pos)
     self:drop()
@@ -1243,8 +1248,8 @@ playerclass=actor:copy({
     local closest=solder_distance+.1
     for a in all(self.room.actors) do
       for c in all(a.connections) do
-        local d=(self.pos-c:connpos()):length() 
-        if d < closest then
+        local d=(self.solder_pos-c:connpos()):length() 
+        if (not (c.locked or (c.conn and c.conn.locked))) and d < closest then
           target=c closest=d
           break
         end
@@ -1254,7 +1259,7 @@ playerclass=actor:copy({
       if (solder_start) self.solder_start=nil return
     elseif not solder_start then
       if (target:can_solder()) self.solder_start=target sfx(6) return
-      if (target.conn and not target.locked) simulation:disconnect(target) sfx(6) return
+      if (target.conn) simulation:disconnect(target) sfx(6) return
     else
       if self.can_solder(solder_start, target) then
         sfx(6)
@@ -1279,13 +1284,13 @@ playerclass=actor:copy({
   draw=function(self)
     if self.solder_start then
       local apos=self.solder_start:connpos()
-      local bpos=self.pos
+      local bpos=self.solder_pos
       wire.draw_types[self.wire_type](apos, bpos, wire_color)
     end
+    actor.draw(self)
     if self.solder_start then
-      spr(46, self.pos.x-2, self.pos.y-2)
-    else
-      actor.draw(self)
+      local p=self.solder_pos-v{2,2}
+      spr(46, p.x, p.y)
     end
   end,
 })
@@ -1352,13 +1357,13 @@ __gfx__
 00000000000000000000000000000000000000000888888000500555555555555550050000000000065656600000080000000000000000000000000000000000
 00000000000000000000000000000000000000000098989000544500000000000054450000000000066666600000800000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000500500000000000050050000000000000660000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000dddddd000500500000330000333000066000000000000000000000000000000000000000000000000000000
-0000000000000000000000004444444004444444d188881500500500003553003555330000600000000000000000000000000000000000000000000000000000
-0000000000000000000000004666664004666664d85558150054450003a33a3035335a3066600000000000000000000000000000000000000000000000000000
-0000000000000000000000004666664444666664d855558500500500035335303533335300060000000000000000000000000000000000000000000000000000
-0004000000444000004440004666664444666664d855558500500500353333533533335366660000000000000000000000000000000000000000000000000000
-0004000004404400044044004666664004666664d8555585005005003533335335335a3000006000000000000000000000000000000000000000000000000000
-0040400004000400040004004444444004444444d198989500544500355555533555330066666000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000dddddd000500500000330000333000066000000000e0e00000e0e00000e0e00000e0e000000000000000000
+0000000000000000000000004444444004444444d18888150050050000355300355533000060000000dddd0000dddd0000dddd0000dddd000000000000000000
+0000000000000000000000004666664004666664d85558150054450003a33a3035335a30666000000a5a5ad00a5a5ad00a5a5ad00a5a5ad00000000000000000
+0000000000000000000000004666664444666664d8555585005005000353353035333353000600000a5a5a400a5a5a400a5a5a400a5a5a400000000000000000
+0004000000444000004440004666664444666664d85555850050050035333353353333536666000094aaa40094aaa40094aaa40094aaa4000000000000000000
+0004000004404400044044004666664004666664d8555585005005003533335335335a30000060000ddadd000ddadd000ddadd000ddadd000000000000000000
+0040400004000400040004004444444004444444d198989500544500355555533555330066666000044044000440440004404400044044000000000000000000
 00040000440004404400044000000000000000000555555000500500033333300333000000000600000000000000000000000000000000000000000000000000
 00404000400000404000004000700000007000000000000000500500000000000050050000000000000000000222222002222220000000000020000000000000
 040004004000004040040040077700000700000000000000005445000000000000544500022222200222222022f222f222f222f2022222200080000000000000
