@@ -1144,8 +1144,8 @@ solder_distance=5
 devmode_playerpos=62
 playerclass=actor:copy({
   spr=26,
-  sprs={41,42,43,44,45},
-  sprs={26, 27, 28, 29},
+  sprs=parse_val"{26,27,28,29,30",
+  voff=parse_val"{0,0,-1,-1,0",
   sidx=1,
   swt=4,
   player=true,
@@ -1154,7 +1154,7 @@ playerclass=actor:copy({
   wire_type=1,
   btn4=0,
   btn5=0,
-  solder_offsets={v{-5,0},v{4,0}},
+  solder_offsets={v{-5,1},v{4,1}},
   initialize=function(self,...)
     actor.initialize(self,...)
     if (devmode) self.pos=vector.dget(devmode_playerpos) self:setroom()
@@ -1174,7 +1174,7 @@ playerclass=actor:copy({
       if (self.swt==0) self.sidx=(self.sidx%#self.sprs)+1 self.swt=4
       self.spr=self.sprs[self.sidx]
     end
-    self.solder_pos=self.pos+self.solder_offsets[self.flipx and 2 or 1]
+    self.solder_pos=self.pos+self.solder_offsets[self.flipx and 2 or 1]+v{0,self.voff[self.sidx]}
   end,
   move=function(self,dist)
     if (btn(5)) return
