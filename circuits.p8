@@ -1248,7 +1248,7 @@ world={
   draw_room=function(self)
     local robot=current_room.robot
     local mapcoords=robot and vector.zero or current_room.coord*16
-    if (robot) pal(9, robot.color) map(0, 16, roomcoords.x, roomcoords.y, 16, 16) pal()
+    if (robot) rectfill(roomcoords.x+6, roomcoords.y+6, roomcoords.x+121, roomcoords.y+121, robot.color) rectfill(roomcoords.x+9, roomcoords.y+9, roomcoords.x+118, roomcoords.y+118, 0) -- pal(9, robot.color) map(0, 16, roomcoords.x, roomcoords.y, 16, 16) pal()
     map(mapcoords.x, mapcoords.y, roomcoords.x, roomcoords.y, 16, 16)
     for t in all(current_room.text or {}) do
       if (not t[4]) print(t[3], t[1]+roomcoords.x, t[2]+roomcoords.y, text_color)
@@ -1347,12 +1347,14 @@ playerclass=actor:copy({
     if self.holding then
       self:drop()
     else
+      local interact
       for a in all(self.room.actors) do
         if self:touching(a) then
           if (a.movable) a:picked_up(self) return
-          if (a.interact and a:interact(self)) return
+          if (a.interact) interact=a
         end
       end
+      if (interact) interact:interact(self)
     end
   end,
   drop=function(self)
@@ -1365,13 +1367,12 @@ playerclass=actor:copy({
   solder=function(self)
     local target
     local solder_start=self.solder_start
-    local closest=solder_distance+.1
+    local closest=solder_distance+1
     for a in all(self.room.actors) do
       for c in all(a.connections) do
         local d=(self.solder_pos-c:connpos()):length() 
         if (not (c.locked or (c.conn and c.conn.locked))) and d < closest then
           target=c closest=d
-          break
         end
       end
     end
