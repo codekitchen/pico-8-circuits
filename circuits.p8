@@ -607,6 +607,8 @@ types.toggle=component:copy({
   w=2,
   active=1,
   tick=function(self)
+    -- no change if both inputs are active
+    if (self.c.powered and self.c2.powered) return
     if (self.c.powered) self.active=1
     if (self.c2.powered) self.active=2
     self.c3.powered=self.active==1
@@ -1248,7 +1250,7 @@ world={
   draw_room=function(self)
     local robot=current_room.robot
     local mapcoords=robot and vector.zero or current_room.coord*16
-    if (robot) rectfill(roomcoords.x+6, roomcoords.y+6, roomcoords.x+121, roomcoords.y+121, robot.color) rectfill(roomcoords.x+9, roomcoords.y+9, roomcoords.x+118, roomcoords.y+118, 0) -- pal(9, robot.color) map(0, 16, roomcoords.x, roomcoords.y, 16, 16) pal()
+    if (robot) rectfill(roomcoords.x+6, roomcoords.y+6, roomcoords.x+121, roomcoords.y+121, robot.color) rectfill(roomcoords.x+9, roomcoords.y+9, roomcoords.x+118, roomcoords.y+118, 0)
     map(mapcoords.x, mapcoords.y, roomcoords.x, roomcoords.y, 16, 16)
     for t in all(current_room.text or {}) do
       if (not t[4]) print(t[3], t[1]+roomcoords.x, t[2]+roomcoords.y, text_color)
