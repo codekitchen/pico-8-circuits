@@ -262,6 +262,9 @@ connection=object:copy({
     self._pos=v{x,y}
     if (args) merge(self,args)
   end,
+  delete=function(self)
+    if (self.wire) self.wire:delete()
+  end,
   add=function(self, owner)
     self.owner=owner
   end,
@@ -355,6 +358,10 @@ component=actor:copy({
     if (not self.cshow) self.c.hidden=true
     if (self.locked) self.c.locked=true
   end,
+  delete=function(self)
+    foreach(self.connections, connection.delete)
+    actor.delete(self)
+  end,
   draw=function(self)
     foreach(self.connections, function(c) c:draw() end)
     if (self.powered) pal(wire_color, powered_color) pal(component_color, powered_color)
@@ -441,6 +448,7 @@ types.switch=component:copy({
   end,
 })
 types.relay=component:copy({
+  relay=true,
   connections={i(0,0),o(0,0)},
   initialize=function(self,...)
     component.initialize(self,...)
@@ -1130,15 +1138,31 @@ door/100/68/doorway={0,-2,0,-1/facing=north/coffs=v{0,-3
 key/112/56/id=3
 keydoor/124/36/id=3/doorway={0,-3,1,-1/facing=north
 energydoor/60/68/doorway={1,0,2,0/facing=east/cshow=false
+relay/34/12/facing=east
+relay/98/15/facing=south
+relay/95/30/facing=west
+relay/31/27/facing=north
 |{3,1,2,1
 {4,1,5,1
+{9,2,10,1
+{10,2,11,1
+{11,2,12,1
+{12,2,9,1
 ]],{
   text={
     {36,16,"circuit bender\nby @codekitchen"},
     {24,11," robot bumpers detect\n when the robot\n is touching a wall",true}
   },
+  start=function(self)
+    self.actors[9].c.powered=true
+  end,
   update=function(self)
-    if (player:roompos().y<84) self.text[1][4]=true self.text[2][4]=nil
+    if (player:roompos().y>84 or self.actors[7].powered) return
+    self.text[1][4]=true self.text[2][4]=nil
+    for i=12,9,-1 do
+      self.actors[i]:delete()
+    end
+    self.update=nil
   end
 })
 parse_room[[2,2
@@ -1280,7 +1304,10 @@ parse_room([[0,2,
     {25,45,"      the secret end\n(under construction)"}
   }
 })
-for room in all(rooms) do room:create_actors() end
+  for room in all(rooms) do room:create_actors() end
+  for room in all(rooms) do
+    if (room.start) room:start()
+  end
 end
 world={ 
   tile_at=function(self, pos)
