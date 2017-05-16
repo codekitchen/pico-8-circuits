@@ -279,7 +279,7 @@ connection=object:copy({
     local drawpos=self:basepos()+self.offs[self.facing.id]
     local dspr=self.spr+(self.facing.horiz and 2 or 0)
     pal(wire_color, self.powered and powered_color or (self.conn and conn_color or conn_color))
-    if (self.conn) pal(3,7)
+    if (self.conn) pal(3,wire_color)
     if connflash>0 and connflash_check(self) then
       if ((flr(connflash/5))%2==1) pal(wire_color, connflash_color)
     end
@@ -287,7 +287,7 @@ connection=object:copy({
     pal()
   end,
   can_solder=function(self)
-    return not self.locked and self.conn == nil and not self.hidden
+    return not self.locked and not (self.conn and self.conn.locked) and not self.hidden
   end,
 })
 input=connection:copy({
@@ -1465,25 +1465,30 @@ playerclass=actor:copy({
   end,
   solder_start=nil,
   can_solder=function(a,b)
-    return b:can_solder() and b.owner != a.owner and b.type != a.type
+    return b:can_solder() and not b.conn and b.owner != a.owner and b.type != a.type
   end,
-  solder=function(self)
+  solder_target=function(self)
     local target
-    local solder_start=self.solder_start
     local closest=solder_distance+1
     for a in all(self.room.actors) do
       for c in all(a.connections) do
         local d=(self.solder_pos-c:connpos()):length() 
-        if (not (c.locked or (c.conn and c.conn.locked))) and d < closest then
+        if (c:can_solder()) and d < closest then
           target=c closest=d
         end
       end
     end
+    return target
+  end,
+  solder=function(self)
+    local target=self:solder_target()
+    local solder_start=self.solder_start
     if not target then
       if (solder_start) self.solder_start=nil return
     elseif not solder_start then
-      if (target:can_solder()) self.solder_start=target sfx(6) return
-      if (target.conn) simulation:disconnect(target) sfx(6) return
+      sfx(6)
+      if (target.conn) simulation:disconnect(target) return
+      self.solder_start=target return
     else
       if self.can_solder(solder_start, target) then
         sfx(6)
@@ -1495,7 +1500,7 @@ playerclass=actor:copy({
     -- nothing found, flash connections to signal player
     sfx(7)
     if not solder_start then
-      connflash_check=function(c) return c:can_solder() end
+      connflash_check=function(c) return c:can_solder() and not c.conn end
     else
       connflash_check=function(c) return self.can_solder(solder_start, c) end
     end
@@ -1512,10 +1517,8 @@ playerclass=actor:copy({
       wire.draw_types[self.wire_type](apos, bpos, wire_color)
     end
     actor.draw(self)
-    if self.solder_start then
-      local p=self.solder_pos-v{2,2}
-      spr(46, p.x, p.y)
-    end
+    local target=self:solder_target()
+    if (target and (not self.solder_start or self.can_solder(self.solder_start, target))) local tpos=target:connpos()-v{2,2} spr(46, tpos.x, tpos.y)
   end,
 })
 
