@@ -246,7 +246,7 @@ function draw_actors()
 end
 
 tick=0
-tickframes=5
+tickframes=6
 wire_color=7
 conn_color=6
 powered_color=9
