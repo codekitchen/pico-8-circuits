@@ -305,8 +305,6 @@ function o(...) return output:new(...) end
 
 wire=actor:copy({
   layer=layer.bg,
-  a=v(),
-  b=v(),
   powered=false,
   draw_type=1,
   initialize=function(self, a, b, ...)
@@ -468,20 +466,6 @@ types.empty_output=component:copy({
   cfacing=north,
   tick=function(self)
     self.c.powered=self.powered
-  end,
-})
-types.timed=component:copy({
-  connections={o(0,0)},
-  timing={1,1},
-  ticks=1,
-  tick=function(self)
-    self.ticks-=1
-    if (self.ticks <= 0) self:switch()
-    self.c.powered=self.powered
-  end,
-  switch=function(self)
-    self.powered=not self.powered
-    self.ticks=self.timing[self.powered and 1 or 2]
   end,
 })
 doorbase=component:copy({
