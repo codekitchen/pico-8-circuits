@@ -1483,7 +1483,7 @@ playerclass=actor:copy({
   solder=function(self)
     local target=self:solder_target()
     local solder_start=self.solder_start
-    if not target then
+    if not target or solder_start==target then
       if (solder_start) self.solder_start=nil return
     elseif not solder_start then
       sfx(6)

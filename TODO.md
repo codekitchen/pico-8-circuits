@@ -2,7 +2,6 @@
 
 - Rework the player character
 - Center the player's solder point more
-- Pressing X again over original start point should just release
 - Better design for the green "object barriers"
 
 # Content
