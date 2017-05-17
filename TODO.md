@@ -1,8 +1,8 @@
 # Polish
 
-- Rework the player character
-- Center the player's solder point more
 - Better design for the green "object barriers"
+- Animation for robot spawning/de-spawning
+- Animation for entering/exiting a robot
 
 # Content
 
