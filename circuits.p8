@@ -1150,7 +1150,7 @@ relay/31/27/facing=north
 {12,2,9,1
 ]],{
   text={
-    {36,16,"circuit bender\nby @codekitchen"},
+    {36,16,"\"hi, robot\"\nby @codekitchen"},
     {24,11," robot bumpers detect\n when the robot\n is touching a wall",true}
   },
   start=function(self)
