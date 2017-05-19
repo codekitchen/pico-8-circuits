@@ -6,6 +6,5 @@
 # Content
 
 - Motivation/story
-- Need an ending!
 - And secret ending!
   - Something tweet-able?
