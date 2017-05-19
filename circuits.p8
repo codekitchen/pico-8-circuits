@@ -1328,6 +1328,7 @@ world={
   switch_rooms=function(self, newroom)
     current_room=newroom
     roomcoords=current_room.coord*128
+    mapcoords=current_room.robot and vector.zero or current_room.coord*16
   end,
   -- view a different room without switching to it
   view_room=function(self, room)
@@ -1339,7 +1340,6 @@ world={
     update_actors()
     if (connflash > 0) connflash-=1
     if (current_room and current_room.update) current_room:update()
-    mapcoords=current_room.robot and vector.zero or current_room.coord*16
     self:update_tiles()
   end,
   update_tiles=function(self)
