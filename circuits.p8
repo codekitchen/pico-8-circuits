@@ -786,6 +786,7 @@ robot_components_by_id={
 }
 robot_colors=parse_val"{6,6,6,11,14,6,6,6,6,13"
 robot_components_by_id[0]={}
+tp_frames=5
 robotclass=component:copy({
   movable=true,
   robot=true,
@@ -796,8 +797,8 @@ robotclass=component:copy({
   smoke={},
   action2=function(self)
     self.player_pos=player.pos
-    player.last_robot=self
-    player:teleport(self.room_coords+v{26,108})
+    self.tp=0
+    self.tpo=false
   end,
   view=function(self)
     world:view_room(self.robot_room)
@@ -898,7 +899,19 @@ robotclass=component:copy({
   bumper_draw={{v{-2,-5},v{1,-5}},{v{-5,-2},v{-5,1}},{v{-2,4},v{1,4}},{v{4,-2},v{4,1}}},
   thruster_offset={{v{0,-4},-.25},{v{-4,0},0},{v{0,4},.25},{v{4,0},.5}},
   update=function(self)
-    if (player.pos:overlap(self.room_coords+v{16,108},self.room_coords+v{20,112})) player:teleport(self.player_pos)
+    if self.tp then
+      self.layer=layer.fg
+      if self.tpo then
+        self.tp-=1
+        if (self.tp <= 0) self.tp=nil
+      else
+        self.tp+=1
+        if (self.tp >= tp_frames) self.tp=nil player.last_robot=self player:teleport(self.room_coords+v{26,106})
+      end
+      return
+    end
+    self.layer=layer.main
+    if (player.pos:overlap(self.room_coords+v{16,106},self.room_coords+v{20,112})) player:teleport(self.player_pos) self.tp=tp_frames self.tpo=true return
     for i,b in pairs(self.bumpers) do
       local bumped=b.powered
       local bpos=self.bumper_offset[i]
@@ -942,6 +955,7 @@ robotclass=component:copy({
     end
     if (self.switch.powered) pal(5,10)
     pal(6,self.color)
+    if (self.tp) lx=lerp(self.pos.x-4,roomcoords.x-12,self.tp/tp_frames) ly=lerp(self.pos.y-4,roomcoords.y-12,self.tp/tp_frames) ls=lerp(8,154,self.tp/tp_frames) sspr(80, 0, 8, 8, lx, ly, ls, ls) pal() return
     component.draw(self)
     pal()
     for i=1,4 do
@@ -956,6 +970,11 @@ robotclass=component:copy({
     return world:walkable(self, pos+v{-4,3}) and world:walkable(self, pos+v{3,-4}) and world:walkable(self, pos+v{-4,-4}) and world:walkable(self, pos+v{3,3})
   end,
 })
+
+function lerp(a, b, t)
+  return a+ t*(b-a)
+  -- return (1-t)*a + t*b
+end
 
 simulation={
   tick=function(self)
@@ -1337,6 +1356,7 @@ world={
     self.viewing_room=nil
     room_check()
     update_actors()
+    room_check()
     if (connflash > 0) connflash-=1
     if (current_room and current_room.update) current_room:update()
     mapcoords=current_room.robot and vector.zero or current_room.coord*16
