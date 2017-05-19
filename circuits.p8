@@ -1238,7 +1238,7 @@ button/60/50/facing=south/reset=6
 door/48/114/facing=north/cfacing=west/doorway={0,-3,0,-1
 button/28/118/facing=north/reset=6
 relay/16/43/facing=east
-door/52/46/facing=south/cfacing=north/doorway={0,1,0,3
+door/52/46/facing=south/cfacing=north/doorway={0,1,0,3/locked=true
 button/20/70/facing=north/reset=6
 door/20/95/facing=south/cfacing=north/doorway={0,1,0,3
 |{2,1,1,1
@@ -1253,7 +1253,7 @@ parse_room[[4,0
 robot_spawner/24/16/robot_id=3/cfacing=north/coffs=v{7,-10
 button/54/108
 splitter/3/120
-energydoor/36/36/doorway={0,-3,0,-1/cfacing=south/facing=north
+energydoor/36/36/doorway={0,-3,0,-1/cfacing=south/facing=north/locked=true
 key/103/119/id=4
 |{1,1,2,1
 {3,1,4,1
