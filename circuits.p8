@@ -1496,7 +1496,7 @@ playerclass=actor:copy({
   end,
   solder_start=nil,
   can_solder=function(a,b)
-    return b:can_solder() and not b.conn and b.owner != a.owner and b.type != a.type
+    return b:can_solder() and b.owner != a.owner and b.type != a.type
   end,
   solder_target=function(self)
     local target
@@ -1523,6 +1523,7 @@ playerclass=actor:copy({
     else
       if self.can_solder(solder_start, target) then
         sfx(6)
+        if (target.conn) simulation:disconnect(target)
         simulation:connect(solder_start, target, {draw_type=self.wire_type})
         self.solder_start=nil
         return
