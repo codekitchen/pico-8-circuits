@@ -810,6 +810,7 @@ robotclass=component:copy({
     self.pos=pos
     self:setroom()
     for a in all(self.actors) do a:reset() end
+    player.last_robot=self
   end,
   initialize=function(self,...)
     component.initialize(self,...)
