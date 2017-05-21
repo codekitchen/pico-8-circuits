@@ -1549,7 +1549,9 @@ playerclass=actor:copy({
     end
     actor.draw(self)
     local target=self:solder_target()
-    if (flr(tick/tickframes)%2 == 0 and target and (not self.solder_start or self.can_solder(self.solder_start, target))) local cpos=target:connpos() local tpos=cpos-v{2,2}  spr(46, tpos.x, tpos.y)
+    if target and not self.holding then
+      if (flr(tick/tickframes)%2 == 0 and (not self.solder_start or self.can_solder(self.solder_start, target))) local cpos=target:connpos() local tpos=cpos-v{2,2}  spr(46, tpos.x, tpos.y)
+    end
   end,
 })
 
