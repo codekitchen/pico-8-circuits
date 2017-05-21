@@ -1231,9 +1231,9 @@ key/17/79/id=6
     {92,43,"\"or\"\ngate"},
     {92,67,"\"not\"\ngate"},
     {16,14,"logic gates\noutput power\nbased on\ntheir inputs\n\npick up a gate\nfor more info"},
-    {16,14,"and gates are\npowered when\nboth inputs\nare powered\n\ntry it out",true},
-    {16,14,"or gates are\npowered when\neither input\nis powered\n\ntry it out",true},
-    {16,14,"not gates are\npowered when\nthe input is\nnot powered\n\ntry it out",true},
+    {16,14,"\"and\" gates are\npowered when\nboth inputs\nare powered\n\ntry it out",true},
+    {16,14,"\"or\" gates are\npowered when\neither input\nis powered\n\ntry it out",true},
+    {16,14,"\"not\" gates are\npowered when\nthe input is\nnot powered\n\ntry it out",true},
     {67,113,"hold z to run"},
   },
   update=function(self)
