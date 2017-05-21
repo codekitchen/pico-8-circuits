@@ -1020,6 +1020,9 @@ room=object:copy({
   sfx=function(self,id)
     if (self == current_room) sfx(id)
   end,
+  view=function(self)
+    world:view_room(self)
+  end,
 })
 function getroom(v)
   local r=(roomsidx[v.y] or {})[v.x]
@@ -1447,7 +1450,11 @@ playerclass=actor:copy({
       self.btn5=0
     elseif self.btn4 > 2 and self.btn5 > 2 then
       self.action_held=true
-      if (self.last_robot) self.last_robot:view()
+      if self.room.robot then
+        self.room.robot.room:view()
+      elseif self.last_robot then
+        self.last_robot:view()
+      end
     else
       self.action_held=false
     end
