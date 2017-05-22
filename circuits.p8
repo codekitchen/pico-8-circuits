@@ -1603,11 +1603,12 @@ function init_savedata()
     for a in all(all_actors) do
       if (a.reset_progress) a:reset_progress()
     end
-    run()
+    do_restart=tick+10
   end)
 end
 
 function _update()
+  if (do_restart and do_restart<=tick) run() return
   tick+=1
   world:update()
   if tick%tickframes==0 then
