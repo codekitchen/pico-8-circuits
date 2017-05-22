@@ -753,6 +753,37 @@ types.pointer=component:copy({
     if (dir.x>8) self.c4.powered=true
   end,
 })
+types.timer=item:copy({
+  -- movable item just for fun
+  dset=56,
+  hours_dset=54,
+  seconds_dset=55,
+  color=7,
+  initialize=function(self,...)
+    component.initialize(self,...)
+    self.hours=dget(self.hours_dset)
+    self.seconds=dget(self.seconds_dset)
+  end,
+  update=function(self)
+    local changed=false
+    if (tick%30==0) self.seconds+=1 changed=true
+    if (self.seconds>=3600) self.hours+=1 self.seconds-=3600 changed=true
+    if (changed) dset(self.hours_dset, self.hours) dset(self.seconds_dset, self.seconds)
+  end,
+  reset_progress=function(self)
+    item.reset_progress(self)
+    dset(self.hours_dset, 0)
+    dset(self.seconds_dset, 0)
+  end,
+  draw=function(self)
+    local min=flr(self.seconds/60)
+    local sec=self.seconds-(min*60)
+    print(fmt_time_part(self.hours)..":"..fmt_time_part(min)..":"..fmt_time_part(sec), self.pos.x, self.pos.y, self.color)
+  end,
+})
+function fmt_time_part(num)
+  return num < 10 and ("0"..num) or ""..num
+end
 
 bumper_color=7
 robot_room_coords=v{0,512}
@@ -1105,15 +1136,17 @@ energydoor/12/44/facing=east/cfacing=south/doorway={1,0,4,0/coffs=v{1,3
 parse_room([[1,2
 |button/110/36/reset=4/color=13
 robot_spawner/112/16/robot_id=10/cfacing=east/coffs=v{17,0
-energydoor/92/52/facing=south/doorway={0,1,0,2
+energydoor/92/52/facing=south/doorway={0,1,0,2/cshow=false
 button/28/74/facing=south/reset=2
 door/4/87/facing=south/doorway={-1,1,1,2/cfacing=north
+timer/66/110
 |{2,1,1,1
 {5,1,4,1
 ]], {
   text={
     {50,34,"the\n  end"},
-    {68,110,"you made it!"}
+    {10,14,"you made it!"},
+    {12,110,"time taken: "}
   }
 })
 parse_room([[1,3
