@@ -1290,8 +1290,8 @@ door/113/124/doorway={-3,0,-1,1/facing=west/cfacing=east
 {8,1,9,1
 ]]
 parse_room[[4,2
-|button/110/68/reset=4/cshow=false/color=6/norobot=true/color=11
-robot_spawner/112/56/robot_id=4/coffs=v{17,0/cfacing=east
+|button/110/68/reset=4/cshow=false/color=6/norobot=true
+robot_spawner/112/56/robot_id=6/coffs=v{17,0/cfacing=east
 button/26/68/facing=east/cshow=false/reset=4
 door/59/94/doorway={0,1,0,3/cfacing=north/facing=south
 energydoor/84/28/doorway={0,-1,0,-1/facing=north/cshow=false
