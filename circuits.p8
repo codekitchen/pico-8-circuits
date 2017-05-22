@@ -932,7 +932,7 @@ robotclass=component:copy({
     end
   end,
   active=function(self)
-    return not player.room.robot and self.switch.powered and player.holding != self
+    return self.switch.powered and player.holding != self and player.room.robot != self
   end,
   interact_with=function(self,other)
     other:interact(self)
