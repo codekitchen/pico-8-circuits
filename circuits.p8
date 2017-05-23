@@ -4,7 +4,6 @@ __lua__
 -- circuits
 -- by codekitchen
 
-allow_devmode=true
 layer = {
   bg = 1,
   main = 2,
