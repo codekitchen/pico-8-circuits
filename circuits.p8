@@ -1183,7 +1183,7 @@ energydoor/12/44/facing=east/cfacing=south/doorway={1,0,4,0/coffs=v{1,3
   end
 })
 parse_room([[1,2
-|button/110/36/reset=4/color=13
+|button/110/36/reset=4/color=13/norobot=true
 robot_spawner/112/16/robot_id=10/cfacing=east/coffs=v{17,0
 energydoor/92/52/facing=south/doorway={0,1,0,2/cshow=false
 button/28/74/facing=south/reset=2
