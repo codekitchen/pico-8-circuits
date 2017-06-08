@@ -238,6 +238,10 @@ function update_actors()
 end
 
 function draw_actors()
+  -- draw wires first
+  for w in all(all_wires) do
+    w:draw()
+  end
   for l=1,layer.max do
     for a in all(current_room.actors) do
       if (a.layer == l) a:draw()
@@ -319,29 +323,32 @@ wire_draws={
     line(bpos.x, apos.y, bpos.x, bpos.y, c)
   end,
 }
-wire=actor:copy({
-  layer=layer.bg,
+all_wires={}
+wire={
   powered=false,
   draw_type=1,
-  initialize=function(self, a, b, ...)
-    a.wire=self
-    b.wire=self
-    actor.initialize(self,a:connpos(),...)
-    self.a=a
-    self.b=b
+  new=function(_wire,a,b,args)
+    local o={a=a,b=b,pos=a:connpos()}  
+    if (args) merge(o,args)
+    setmetatable(o,wire)
+    a.wire=o b.wire=o
+    add(all_wires, o)
+    return o
   end,
   delete=function(self)
     if (self.a) self.a.wire=nil
     if (self.b) self.b.wire=nil
-    actor.delete(self)
+    del(all_wires, self)
   end,
   draw=function(self)
+    if (self.a.owner.room != current_room) return
     local c=self.powered and powered_color or wire_color
     local apos=self.a:connpos()
     local bpos=self.b:connpos()
     wire_draws[self.draw_type](apos, bpos, c)
   end,
-})
+}
+wire.__index=wire
 component=actor:copy({
   spr=0,
   blocked_flag=7,
