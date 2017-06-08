@@ -254,9 +254,9 @@ text_color=7
 connflash_color=8
 connflash=0
 connflash_time=20
+connposs={v{0, -3}, v{-3, 0}, v{0, 3}, v{3, 0}}
+connoffs={v{-2, -4}, v{-4, -2}, v{-2, -3}, v{-3, -2}}
 connection=object:copy({
-  cposs={v{0, -3}, v{-3, 0}, v{0, 3}, v{3, 0}},
-  offs={v{-2, -4}, v{-4, -2}, v{-2, -3}, v{-3, -2}},
   initialize=function(self,x,y,args)
     self._pos=v{x,y}
     if (args) merge(self,args)
@@ -268,14 +268,14 @@ connection=object:copy({
     self.owner=owner
   end,
   connpos=function(self)
-    return self._pos + self.owner.pos + self.cposs[self.facing.id]
+    return self._pos + self.owner.pos + connposs[self.facing.id]
   end,
   basepos=function(self)
     return self._pos + self.owner.pos
   end,
   draw=function(self)
     if (self.hidden) return
-    local drawpos=self:basepos()+self.offs[self.facing.id]
+    local drawpos=self:basepos()+connoffs[self.facing.id]
     local dspr=self.spr+(self.facing.horiz and 2 or 0)
     pal(wire_color, self.powered and powered_color or (self.conn and conn_color or conn_color))
     if (self.conn) pal(3,wire_color)
@@ -299,12 +299,21 @@ output=connection:copy({
   type='output',
   output=true,
   spr=2,
-  -- offs={v{-2, -4}, v{-4, -2}, v{-2, -3}, v{-3, -2}},
   facing=north,
 })
 function i(...) return input:new(...) end
 function o(...) return output:new(...) end
 
+wire_draws={
+  function(apos, bpos, c)
+    line(apos.x, apos.y, apos.x, bpos.y, c)
+    line(apos.x, bpos.y, bpos.x, bpos.y, c)
+  end,
+  function(apos, bpos, c)
+    line(apos.x, apos.y, bpos.x, apos.y, c)
+    line(bpos.x, apos.y, bpos.x, bpos.y, c)
+  end,
+}
 wire=actor:copy({
   layer=layer.bg,
   powered=false,
@@ -325,18 +334,8 @@ wire=actor:copy({
     local c=self.powered and powered_color or wire_color
     local apos=self.a:connpos()
     local bpos=self.b:connpos()
-    wire.draw_types[self.draw_type](apos, bpos, c)
+    wire_draws[self.draw_type](apos, bpos, c)
   end,
-  draw_types={
-    function(apos, bpos, c)
-      line(apos.x, apos.y, apos.x, bpos.y, c)
-      line(apos.x, bpos.y, bpos.x, bpos.y, c)
-    end,
-    function(apos, bpos, c)
-      line(apos.x, apos.y, bpos.x, apos.y, c)
-      line(bpos.x, apos.y, bpos.x, bpos.y, c)
-    end,
-  }
 })
 component=actor:copy({
   spr=0,
@@ -615,9 +614,9 @@ types.toggle=component:copy({
     rectfill(pos.x, pos.y, pos.x+4, pos.y+3, 9)
   end,
 })
+buttonposs={v{-1,7},v{4,3},v{-1,-2},v{-5,3}}
 types.button=component:copy({
   connections={o(0,0,{locked=true})},
-  cposs={v{-1,7},v{4,3},v{-1,-2},v{-5,3}},
   pressed=0,
   reset=-1,
   cshow=false,
@@ -628,7 +627,7 @@ types.button=component:copy({
     component.initialize(self,...)
     if (self.facing==east) self.flipx=true
     if (self.facing==north) self.flipy=true
-    self.c._pos=self.cposs[self.facing.id]
+    self.c._pos=buttonposs[self.facing.id]
     self:setspr()
   end,
   setspr=function(self)
@@ -793,7 +792,7 @@ types.blank_bot=actor:copy({
     actor.draw(self)
     pal()
     for i=1,4 do
-      robotclass.draw_bumper(self, {}, self.pos+robotclass.bumper_draw[i][1], self.pos+robotclass.bumper_draw[i][2])
+      robotclass.draw_bumper(self, {}, self.pos+bumper_draw[i][1], self.pos+bumper_draw[i][2])
     end
   end,
 })
@@ -853,6 +852,9 @@ robot_components_by_id={
 }
 robot_colors=parse_val"{6,6,6,11,14,6,6,6,6,13"
 robot_components_by_id[0]={}
+bumper_offset={{v{-4,-5},v{3,-5}},{v{-5,-4},v{-5,3}},{v{-4,4},v{3,4}},{v{4,-4},v{4,3}}}
+bumper_draw={{v{-2,-5},v{1,-5}},{v{-5,-2},v{-5,1}},{v{-2,4},v{1,4}},{v{4,-2},v{4,1}}}
+thruster_offset={{v{0,-4},-.25},{v{-4,0},0},{v{0,4},.25},{v{4,0},.5}}
 robotclass=component:copy({
   movable=true,
   robot=true,
@@ -952,18 +954,12 @@ robotclass=component:copy({
     elseif self.id == 10 then
       concat(actors,{'pointer/60/60'})
     end
-    if self.id == 1 or self.id == 11 or self.id == 12 then
+    if self.id == 1 then
       wires={split(
 [[{9,1,13,1
 {13,3,5,1
 {13,2,11,1
 {7,1,13,4]],'\n',true)}
-    elseif self.id == 13 or self.id == 14 then
-      wires={split(
-[[{10,1,13,1
-{13,3,6,1
-{13,2,12,1
-{8,1,13,4]],'\n',true)}
     end
     self.robot_room=room:new(self.room_coords.x/128,self.room_coords.y/128,{ actors=actors, text=text, wires=wires })
     self.robot_room:create_actors()
@@ -979,26 +975,22 @@ robotclass=component:copy({
   delete=function(self)
     notimplemented()
   end,
-  bumper_offset={{v{-4,-5},v{3,-5}},{v{-5,-4},v{-5,3}},{v{-4,4},v{3,4}},{v{4,-4},v{4,3}}},
-  bumper_draw={{v{-2,-5},v{1,-5}},{v{-5,-2},v{-5,1}},{v{-2,4},v{1,4}},{v{4,-2},v{4,1}}},
-  thruster_offset={{v{0,-4},-.25},{v{-4,0},0},{v{0,4},.25},{v{4,0},.5}},
   update=function(self)
+    if (self.pos == vector.zero) return
     if (player.pos:overlap(self.room_coords+v{16,108},self.room_coords+v{20,112})) player:teleport(self.player_pos)
     for i,b in pairs(self.bumpers) do
       local bumped=b.powered
-      local bpos=self.bumper_offset[i]
+      local bpos=bumper_offset[i]
       b.powered=not (world:walkable(self, self.pos+bpos[1]) and world:walkable(self, self.pos+bpos[2]))
       if (not bumped and b.powered) self.room:sfx(1)
     end
     if self:active() then
       local moved
       for i,t in pairs(self.thrusters) do  
-        local offs=self.thruster_offset[i]
+        local offs=thruster_offset[i]
         local ang=rnd(.3)+.35
         if (t.powered) self:move(id_to_dir[i]:about_face()*.5) add(self.smoke,merge(self.pos+offs[1], {dx=cos(ang+offs[2]),dy=sin(ang+offs[2]),ticks=6})) moved=true
       end
-
-      -- if (moved) self.room:sfx(2)
 
       for a in all(self.room.actors) do
         if (self:touching(a) and a.interact) self:interact_with(a)
@@ -1021,6 +1013,7 @@ robotclass=component:copy({
   end,
   draw=function(self)
     local pos=self.pos
+    if (pos == vector.zero) return
     for s in all(self.smoke) do
       local color=s.ticks>2 and 7 or 10
       pset(s.x, s.y, color)
@@ -1030,7 +1023,7 @@ robotclass=component:copy({
     component.draw(self)
     pal()
     for i=1,4 do
-      self:draw_bumper(self.bumpers[i],self.pos+self.bumper_draw[i][1], self.pos+self.bumper_draw[i][2])
+      self:draw_bumper(self.bumpers[i],self.pos+bumper_draw[i][1], self.pos+bumper_draw[i][2])
     end
   end,
   draw_bumper=function(self,r,a,b)
@@ -1546,7 +1539,7 @@ playerclass=actor:copy({
   end,
   action1=function(self)
     if self.solder_start then
-      self.wire_type=(self.wire_type%#wire.draw_types)+1
+      self.wire_type=(self.wire_type%#wire_draws)+1
     else
       self:pickup()
     end
@@ -1630,7 +1623,7 @@ playerclass=actor:copy({
     if self.solder_start then
       local apos=self.solder_start:connpos()
       local bpos=self.solder_pos
-      wire.draw_types[self.wire_type](apos, bpos, wire_color)
+      wire_draws[self.wire_type](apos, bpos, wire_color)
     end
     if (won_game) self.spr=41+flr(tick/10)%2
     actor.draw(self)
