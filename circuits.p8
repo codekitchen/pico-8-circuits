@@ -29,6 +29,7 @@ function copy(o, t)
     if (o.clone) return o:clone()
     local c=merge({}, o)
     if (t) merge(c, t)
+    if (o.cloned) o.cloned(c)
     return c
   else
     return o
@@ -256,11 +257,7 @@ connflash=0
 connflash_time=20
 connposs={v{0, -3}, v{-3, 0}, v{0, 3}, v{3, 0}}
 connoffs={v{-2, -4}, v{-4, -2}, v{-2, -3}, v{-3, -2}}
-connection=object:copy({
-  initialize=function(self,x,y,args)
-    self._pos=v{x,y}
-    if (args) merge(self,args)
-  end,
+connection={
   delete=function(self)
     if (self.wire) self.wire:delete()
   end,
@@ -288,19 +285,27 @@ connection=object:copy({
   can_solder=function(self)
     return not self.locked and not (self.conn and self.conn.locked) and not self.hidden
   end,
-})
-input=connection:copy({
-  type='input',
-  input=true,
-  spr=1,
-  facing=south,
-})
-output=connection:copy({
-  type='output',
-  output=true,
-  spr=2,
-  facing=north,
-})
+  cloned=function(o)
+    setmetatable(o,connection)
+  end,
+}
+connection.__index=connection
+input={
+  new=function(self,x,y,args)
+    local o={_pos=v{x,y},type='input',input=true,spr=1,facing=south}
+    if (args) merge(o,args)
+    setmetatable(o,connection)
+    return o
+  end
+}
+output={
+  new=function(self,x,y,args)
+    local o={_pos=v{x,y},type='output',output=true,spr=2,facing=north}
+    if (args) merge(o,args)
+    setmetatable(o,connection)
+    return o
+  end
+}
 function i(...) return input:new(...) end
 function o(...) return output:new(...) end
 
